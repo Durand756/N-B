@@ -3,7 +3,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 VERIFY_TOKEN = "nakamaverifytoken"  # 🔑 définis ton token ici
-PAGE_ACCESS_TOKEN = "TON_PAGE_ACCESS_TOKEN_ICI"
+PAGE_ACCESS_TOKEN = "EAAVEKRcjZAJABPMmiruQZBjPJhWtBlZCHOU8zaQbpt7E8Nb1IxHLMQFGueu6G4KVgfz5rtTmWmFUwjIamsi9Iksdo2VmhcYsmtZB11PZCHhkDe3yZCy6sPLW4csu4DEXZAMUczXdpg8VPFCGQa0wiyvr6UlM5Nop0WMsobWOj7cZA2Wb8xf6iuYT8FSqMBtShyFwHwfEAwZDZD"
 
 @app.route("/", methods=['GET'])
 def home():
