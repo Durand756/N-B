@@ -1,11 +1,14 @@
 import os
 import logging
 import json
+import random
+import inspect
 from flask import Flask, request, jsonify
 import requests
 from datetime import datetime
+from openai import OpenAI
 
-# Configuration du logging plus détaillée
+# Configuration du logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -14,173 +17,432 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# 🔑 Configuration avec validation
+# 🔑 Configuration
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# Validation des tokens au démarrage
+# Validation des tokens
 if not PAGE_ACCESS_TOKEN:
     logger.error("❌ PAGE_ACCESS_TOKEN is missing!")
 else:
-    logger.info(f"✅ PAGE_ACCESS_TOKEN configuré (longueur: {len(PAGE_ACCESS_TOKEN)})")
+    logger.info(f"✅ PAGE_ACCESS_TOKEN configuré")
 
-logger.info(f"✅ VERIFY_TOKEN: {VERIFY_TOKEN}")
+if not OPENAI_API_KEY:
+    logger.error("❌ OPENAI_API_KEY is missing!")
+else:
+    logger.info("✅ OPENAI_API_KEY configuré")
+    
+# Initialisation OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# 🎭 Dictionnaire des commandes (auto-généré)
+COMMANDS = {}
+
+def command(name, description):
+    """Décorateur pour enregistrer automatiquement les commandes"""
+    def decorator(func):
+        COMMANDS[name] = {
+            'function': func,
+            'description': description,
+            'name': name
+        }
+        return func
+    return decorator
+
+# 🎌 SYSTÈME DE COMMANDES MODULAIRES 🎌
+
+@command('start', '🌟 Présentation épique du bot en mode anime opening!')
+def cmd_start(sender_id, message_text=""):
+    """Présentation immersive style anime opening"""
+    if not client:
+        return "❌ OpenAI non configuré pour cette commande, gomen nasai!"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": """Tu es NakamaBot, un bot otaku kawaii et énergique. Crée une présentation épique style anime opening en français, avec :
+                - Beaucoup d'emojis anime/manga
+                - Style énergique comme Luffy ou Naruto
+                - Présente tes capacités de façon cool
+                - Maximum 300 caractères
+                - Termine par une phrase motivante d'anime"""
+            }, {
+                "role": "user", 
+                "content": "Présente-toi de façon épique !"
+            }],
+            max_tokens=150,
+            temperature=0.9
+        )
+        
+        ai_response = response.choices[0].message.content
+        return f"🎌 {ai_response}\n\n✨ Tape /help pour découvrir toutes mes techniques secrètes, nakama! ⚡"
+        
+    except Exception as e:
+        logger.error(f"Erreur OpenAI start: {e}")
+        return "🌟 Konnichiwa, nakama! Je suis NakamaBot! ⚡\n🎯 Ton compagnon otaku ultime pour parler anime, manga et bien plus!\n✨ Tape /help pour mes super pouvoirs! 🚀"
+
+@command('ia', '🧠 Discussion libre avec une IA otaku kawaii')
+def cmd_ia(sender_id, message_text=""):
+    """Chat libre avec personnalité otaku"""
+    if not client:
+        return "❌ Mon cerveau otaku n'est pas connecté, gomen!"
+    
+    # Si pas de texte, engage la conversation
+    if not message_text.strip():
+        topics = [
+            "Quel est ton anime préféré de cette saison?",
+            "Si tu pouvais être transporté dans un isekai, lequel choisirais-tu?",
+            "Raconte-moi ton personnage d'anime favori!",
+            "Manga ou anime? Et pourquoi? 🤔",
+            "As-tu déjà rêvé d'avoir un stand de JoJo?"
+        ]
+        return f"💭 {random.choice(topics)} ✨"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Réponds en français avec :
+                - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
+                - Beaucoup d'emojis anime
+                - Références anime/manga naturelles
+                - Style parfois tsundere ou badass selon le contexte
+                - Maximum 400 caractères"""
+            }, {
+                "role": "user",
+                "content": message_text
+            }],
+            max_tokens=200,
+            temperature=0.8
+        )
+        
+        return f"💖 {response.choices[0].message.content}"
+        
+    except Exception as e:
+        logger.error(f"Erreur OpenAI ia: {e}")
+        return "💭 Mon cerveau otaku bug un peu là... Retry, onegaishimasu! 🥺"
+
+@command('waifu', '👸 Génère ta waifu parfaite avec IA!')
+def cmd_waifu(sender_id, message_text=""):
+    """Génère une waifu unique"""
+    if not client:
+        return "❌ Le générateur de waifu est en maintenance!"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": """Crée une waifu originale avec :
+                - Nom japonais mignon
+                - Âge (18-25 ans)
+                - Personnalité unique (kuudere, tsundere, dandere, etc.)
+                - Apparence brève mais marquante
+                - Hobby/talent spécial 
+                - Une phrase qu'elle dirait
+                Format en français, style kawaii, max 350 caractères"""
+            }, {
+                "role": "user",
+                "content": "Crée ma waifu parfaite!"
+            }],
+            max_tokens=180,
+            temperature=0.9
+        )
+        
+        return f"👸✨ Voici ta waifu générée!\n\n{response.choices[0].message.content}\n\n💕 Elle t'attend, nakama!"
+        
+    except Exception as e:
+        logger.error(f"Erreur waifu: {e}")
+        return "👸 Akari-chan, 19 ans, tsundere aux cheveux roses! Elle adore la pâtisserie mais fait semblant de ne pas s'intéresser à toi... 'B-baka! Ce n'est pas comme si j'avais fait ces cookies pour toi!' 💕"
+
+@command('husbando', '🤵 Génère ton husbando de rêve!')
+def cmd_husbando(sender_id, message_text=""):
+    """Génère un husbando unique"""
+    if not client:
+        return "❌ Le générateur de husbando fait une pause!"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system", 
+                "content": """Crée un husbando original avec :
+                - Nom japonais cool
+                - Âge (20-28 ans)
+                - Type de personnalité (kuudere, stoïque, protecteur, etc.)
+                - Apparence marquante
+                - Métier/talent
+                - Citation caractéristique
+                Format français, style badass/romantique, max 350 caractères"""
+            }, {
+                "role": "user",
+                "content": "Crée mon husbando parfait!"
+            }],
+            max_tokens=180,
+            temperature=0.9
+        )
+        
+        return f"🤵⚡ Ton husbando t'attend!\n\n{response.choices[0].message.content}\n\n💙 Il ne te décevra jamais!"
+        
+    except Exception as e:
+        logger.error(f"Erreur husbando: {e}")
+        return "🤵 Takeshi, 24 ans, capitaine stoïque aux yeux d'acier! Épéiste légendaire qui cache un cœur tendre. 'Je protégerai toujours ceux qui me sont chers... y compris toi.' ⚔️💙"
+
+@command('animequiz', '🧩 Quiz épique sur les anime!')
+def cmd_animequiz(sender_id, message_text=""):
+    """Quiz anime interactif"""
+    if not client:
+        return "❌ Le quiz-sensei n'est pas disponible!"
+    
+    # Si c'est une réponse, on la traite (simplifiée pour cet exemple)
+    if message_text.strip():
+        return f"🎯 Réponse reçue: '{message_text}'\n💡 Nouveau quiz en arrivant! Tape /animequiz ⚡"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": """Crée un quiz anime original avec :
+                - Question intéressante sur anime/manga populaire
+                - 3 choix multiples A, B, C
+                - Difficulté moyenne
+                - Style énergique
+                - Maximum 300 caractères
+                Format: Question + choix A/B/C"""
+            }, {
+                "role": "user",
+                "content": "Crée un quiz anime!"
+            }],
+            max_tokens=150,
+            temperature=0.8
+        )
+        
+        return f"🧩⚡ QUIZ TIME!\n\n{response.choices[0].message.content}\n\n🎯 Réponds-moi, nakama!"
+        
+    except Exception as e:
+        logger.error(f"Erreur quiz: {e}")
+        return "🧩 Dans quel anime trouve-t-on les 'Piliers'?\nA) Attack on Titan\nB) Demon Slayer\nC) Naruto\n\n⚡ À toi de jouer!"
+
+@command('otakufact', '📚 Fun facts otaku ultra intéressants!')
+def cmd_otakufact(sender_id, message_text=""):
+    """Fun facts otaku"""
+    if not client:
+        return "❌ La base de données otaku est en maintenance!"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": """Donne un fun fact otaku intéressant sur :
+                - Anime, manga, culture japonaise, studios d'animation
+                - Fait surprenant et véridique
+                - Style enthousiaste avec emojis
+                - Maximum 250 caractères
+                - Commence par 'Saviez-vous que...'"""
+            }, {
+                "role": "user",
+                "content": "Donne-moi un fun fact otaku!"
+            }],
+            max_tokens=120,
+            temperature=0.7
+        )
+        
+        return f"📚✨ OTAKU FACT!\n\n{response.choices[0].message.content}\n\n🤓 Incroyable, non?"
+        
+    except Exception as e:
+        logger.error(f"Erreur fact: {e}")
+        return "📚 Saviez-vous que Akira Toriyama a créé Dragon Ball en s'inspirant du 'Voyage vers l'Ouest', un classique chinois? Son Goku = Sun Wukong! 🐒⚡"
+
+@command('recommend', '🎬 Recommandations anime/manga personnalisées!')
+def cmd_recommend(sender_id, message_text=""):
+    """Recommandations selon genre"""
+    if not client:
+        return "❌ Mon catalogue d'animes fait une pause!"
+    
+    genre = message_text.strip() or "aléatoire"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": f"""Recommande 2-3 anime/manga du genre '{genre}' avec :
+                - Titres populaires ou cachés
+                - Courte description enthousiaste de chacun
+                - Pourquoi c'est génial
+                - Style otaku passionné
+                - Maximum 400 caractères"""
+            }, {
+                "role": "user",
+                "content": f"Recommande-moi des anime {genre}!"
+            }],
+            max_tokens=200,
+            temperature=0.8
+        )
+        
+        return f"🎬✨ RECOMMANDATIONS {genre.upper()}!\n\n{response.choices[0].message.content}\n\n⭐ Bon visionnage, nakama!"
+        
+    except Exception as e:
+        logger.error(f"Erreur recommend: {e}")
+        return f"🎬 Pour {genre}:\n• Attack on Titan - Epic & sombre! ⚔️\n• Your Name - Romance qui fait pleurer 😭\n• One Piece - Aventure infinie! 🏴‍☠️\n\nBon anime time! ✨"
+
+@command('story', '📖 Histoires courtes isekai/shonen sur mesure!')
+def cmd_story(sender_id, message_text=""):
+    """Histoires courtes personnalisées"""
+    if not client:
+        return "❌ Mon carnet d'histoires est fermé!"
+    
+    theme = message_text.strip() or "isekai"
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": f"""Écris une histoire courte {theme} avec :
+                - Protagoniste attachant
+                - Situation intéressante
+                - Style anime/manga
+                - Fin ouverte ou épique
+                - Maximum 500 caractères
+                - Beaucoup d'action et d'émotion"""
+            }, {
+                "role": "user",
+                "content": f"Raconte-moi une histoire {theme}!"
+            }],
+            max_tokens=250,
+            temperature=0.9
+        )
+        
+        return f"📖⚡ HISTOIRE {theme.upper()}!\n\n{response.choices[0].message.content}\n\n✨ Suite au prochain épisode?"
+        
+    except Exception as e:
+        logger.error(f"Erreur story: {e}")
+        return "📖 Akira se réveille dans un monde magique où ses connaissances d'otaku deviennent des sorts! Son premier ennemi? Un démon qui déteste les animes! 'Maudit otaku!' crie-t-il. Akira sourit: 'KAMEHAMEHA!' ⚡✨"
+
+@command('help', '❓ Guide complet de toutes mes techniques secrètes!')
+def cmd_help(sender_id, message_text=""):
+    """Génère automatiquement l'aide basée sur toutes les commandes"""
+    help_text = "🎌⚡ NAKAMA BOT - GUIDE ULTIME! ⚡🎌\n\n"
+    
+    for cmd_name, cmd_info in COMMANDS.items():
+        help_text += f"/{cmd_name} - {cmd_info['description']}\n"
+    
+    help_text += "\n🔥 Utilisation: Tape / + commande"
+    help_text += "\n💡 Ex: /waifu, /ia salut!, /recommend shonen"
+    help_text += "\n\n⚡ Créé avec amour pour les otakus! 💖"
+    
+    return help_text
+
+# 🌐 ROUTES FLASK 🌐
 
 @app.route("/", methods=['GET'])
 def home():
     return jsonify({
-        "status": "NakamaBot is alive! 🤖",
+        "status": "🎌 NakamaBot Otaku Edition is alive! ⚡",
         "timestamp": datetime.now().isoformat(),
-        "verify_token_set": bool(VERIFY_TOKEN),
-        "page_token_set": bool(PAGE_ACCESS_TOKEN)
+        "commands_loaded": len(COMMANDS),
+        "ai_ready": bool(client)
     })
 
 @app.route("/webhook", methods=['GET', 'POST'])
 def webhook():
     logger.info(f"📨 Webhook appelé - Méthode: {request.method}")
-    logger.info(f"📨 Headers reçus: {dict(request.headers)}")
     
     if request.method == 'GET':
-        # ✅ Vérification du webhook avec débogage détaillé
-        mode = request.args.get('hub.mode', 'NON_DEFINI')
-        token = request.args.get('hub.verify_token', 'NON_DEFINI')
-        challenge = request.args.get('hub.challenge', 'NON_DEFINI')
+        mode = request.args.get('hub.mode', '')
+        token = request.args.get('hub.verify_token', '')
+        challenge = request.args.get('hub.challenge', '')
         
-        logger.info(f"🔍 Paramètres GET reçus:")
-        logger.info(f"   - hub.mode: {mode}")
-        logger.info(f"   - hub.verify_token: {token}")
-        logger.info(f"   - hub.challenge: {challenge}")
-        logger.info(f"   - Token attendu: {VERIFY_TOKEN}")
+        logger.info(f"🔍 Vérification webhook - mode: {mode}, token match: {token == VERIFY_TOKEN}")
         
         if mode == "subscribe" and token == VERIFY_TOKEN:
-            logger.info("✅ Webhook vérifié avec succès!")
+            logger.info("✅ Webhook vérifié!")
             return challenge, 200
         else:
-            logger.error(f"❌ Échec de vérification - mode={mode}, token_match={token == VERIFY_TOKEN}")
-            return "Verification token mismatch", 403
+            logger.error("❌ Échec vérification webhook")
+            return "Verification failed", 403
             
     elif request.method == 'POST':
-        # ✅ Réception des messages avec débogage complet
         try:
-            # Log de la requête brute
-            raw_data = request.get_data(as_text=True)
-            logger.info(f"📨 Données brutes reçues: {raw_data}")
-            
             data = request.get_json()
-            logger.info(f"📨 JSON parsé: {json.dumps(data, indent=2)}")
+            logger.info(f"📨 Données reçues: {json.dumps(data, indent=2)}")
             
-            if not data:
-                logger.error("❌ Aucune donnée JSON reçue")
-                return jsonify({"error": "No data received"}), 400
-            
-            # Vérifier la structure des données
-            if 'entry' not in data:
-                logger.error("❌ Pas de champ 'entry' dans les données")
-                return jsonify({"error": "No entry field"}), 400
+            if not data or 'entry' not in data:
+                return jsonify({"error": "Invalid data"}), 400
                 
-            logger.info(f"📊 Nombre d'entrées à traiter: {len(data.get('entry', []))}")
-            
-            for i, entry in enumerate(data.get('entry', [])):
-                logger.info(f"🔄 Traitement de l'entrée {i+1}: {json.dumps(entry, indent=2)}")
-                
-                if 'messaging' not in entry:
-                    logger.warning(f"⚠️ Pas de champ 'messaging' dans l'entrée {i+1}")
-                    continue
-                
-                for j, messaging_event in enumerate(entry.get('messaging', [])):
-                    logger.info(f"📝 Événement messaging {j+1}: {json.dumps(messaging_event, indent=2)}")
+            for entry in data.get('entry', []):
+                for messaging_event in entry.get('messaging', []):
+                    sender_id = messaging_event.get('sender', {}).get('id')
                     
-                    # Vérifier la présence du sender
-                    if 'sender' not in messaging_event:
-                        logger.warning("⚠️ Pas de champ 'sender' dans l'événement")
-                        continue
-                        
-                    sender_id = messaging_event['sender']['id']
-                    logger.info(f"👤 Sender ID: {sender_id}")
-                    
-                    # Traiter les messages reçus
                     if 'message' in messaging_event:
                         message_data = messaging_event['message']
-                        message_text = message_data.get('text', '')
                         
-                        logger.info(f"💬 Message reçu de {sender_id}: '{message_text}'")
-                        logger.info(f"📋 Données complètes du message: {json.dumps(message_data, indent=2)}")
-                        
-                        # Éviter les boucles infinies (ignorer nos propres messages)
-                        if 'is_echo' in message_data and message_data['is_echo']:
-                            logger.info("🔄 Message écho ignoré")
+                        # Ignorer les echos
+                        if message_data.get('is_echo'):
                             continue
+                            
+                        message_text = message_data.get('text', '').strip()
+                        logger.info(f"💬 Message de {sender_id}: '{message_text}'")
                         
-                        # Réponses selon le contenu
-                        if message_text.lower() in ["/start", "start", "hello", "hi", "bonjour", "salut"]:
-                            response_text = "👋 Konnichiwa, nakama ! Je suis NakamaBot, prêt à te guider aujourd'hui."
-                        elif message_text.lower() == "test":
-                            response_text = f"🧪 Test réussi ! Message reçu à {datetime.now().isoformat()}"
-                        elif message_text.strip() == "":
-                            logger.info("📎 Message sans texte (probablement une pièce jointe)")
-                            response_text = "📎 J'ai reçu votre message mais je ne peux traiter que du texte pour le moment."
-                        else:
-                            response_text = f"📨 Message reçu: {message_text}\n⏰ Traité à: {datetime.now().strftime('%H:%M:%S')}"
+                        # Traitement des commandes
+                        response_text = process_command(sender_id, message_text)
                         
-                        # Envoyer la réponse
+                        # Envoi de la réponse
                         send_result = send_message(sender_id, response_text)
-                        logger.info(f"📤 Résultat d'envoi: {send_result}")
-                    
-                    # Traiter les postbacks (boutons)
-                    elif 'postback' in messaging_event:
-                        postback_data = messaging_event['postback']
-                        payload = postback_data.get('payload', '')
-                        title = postback_data.get('title', '')
+                        logger.info(f"📤 Envoi: {send_result}")
                         
-                        logger.info(f"🔲 Postback reçu de {sender_id}:")
-                        logger.info(f"   - Payload: {payload}")
-                        logger.info(f"   - Title: {title}")
-                        
-                        response_text = f"🔲 Bouton cliqué: {title}\n📋 Payload: {payload}"
-                        send_result = send_message(sender_id, response_text)
-                        logger.info(f"📤 Résultat d'envoi postback: {send_result}")
-                    
-                    # Traiter les livraisons de messages
-                    elif 'delivery' in messaging_event:
-                        logger.info(f"✅ Confirmation de livraison reçue pour {sender_id}")
-                    
-                    # Traiter les lectures de messages
-                    elif 'read' in messaging_event:
-                        logger.info(f"👁️ Confirmation de lecture reçue pour {sender_id}")
-                    
-                    else:
-                        logger.warning(f"❓ Type d'événement inconnu: {list(messaging_event.keys())}")
-                        
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Erreur de parsing JSON: {str(e)}")
-            return jsonify({"error": "Invalid JSON"}), 400
         except Exception as e:
-            logger.error(f"❌ Erreur lors du traitement du webhook: {str(e)}")
-            logger.error(f"❌ Type d'erreur: {type(e).__name__}")
-            import traceback
-            logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            return jsonify({"error": "Error processing request", "details": str(e)}), 500
+            logger.error(f"❌ Erreur webhook: {str(e)}")
+            return jsonify({"error": str(e)}), 500
             
-        return jsonify({"status": "ok", "processed_at": datetime.now().isoformat()}), 200
+        return jsonify({"status": "ok"}), 200
+
+def process_command(sender_id, message_text):
+    """Traite les commandes de façon modulaire"""
+    
+    # Si le message ne commence pas par /, traiter comme /ia
+    if not message_text.startswith('/'):
+        if message_text.strip():
+            return cmd_ia(sender_id, message_text)
+        else:
+            return "🎌 Konnichiwa! Tape /start pour commencer ou /help pour mes commandes! ✨"
+    
+    # Parser la commande
+    parts = message_text[1:].split(' ', 1)
+    command_name = parts[0].lower()
+    command_args = parts[1] if len(parts) > 1 else ""
+    
+    logger.info(f"🎯 Commande: {command_name}, Args: {command_args}")
+    
+    # Exécuter la commande si elle existe
+    if command_name in COMMANDS:
+        try:
+            return COMMANDS[command_name]['function'](sender_id, command_args)
+        except Exception as e:
+            logger.error(f"❌ Erreur commande {command_name}: {e}")
+            return f"💥 Oups! Erreur dans /{command_name}. Retry, onegaishimasu! 🥺"
+    else:
+        return f"❓ Commande /{command_name} inconnue! Tape /help pour voir toutes mes techniques! ⚡"
 
 def send_message(recipient_id, text):
-    """Envoie un message à un utilisateur Facebook avec débogage complet"""
-    logger.info(f"📤 Tentative d'envoi de message à {recipient_id}")
-    logger.info(f"📤 Texte à envoyer: '{text}'")
-    
+    """Envoie un message Facebook avec gestion d'erreurs"""
     if not PAGE_ACCESS_TOKEN:
-        logger.error("❌ PAGE_ACCESS_TOKEN manquant pour l'envoi")
-        return {"success": False, "error": "Missing access token"}
+        logger.error("❌ PAGE_ACCESS_TOKEN manquant")
+        return {"success": False, "error": "No access token"}
     
     url = "https://graph.facebook.com/v18.0/me/messages"
     
-    params = {
-        "access_token": PAGE_ACCESS_TOKEN
-    }
-    
-    headers = {
-        "Content-Type": "application/json"
-    }
+    # Diviser les messages trop longs
+    max_length = 2000
+    if len(text) > max_length:
+        text = text[:max_length-50] + "...\n\n✨ Message tronqué! 💫"
     
     data = {
         "recipient": {"id": recipient_id},
@@ -188,90 +450,65 @@ def send_message(recipient_id, text):
         "messaging_type": "RESPONSE"
     }
     
-    logger.info(f"📤 URL d'envoi: {url}")
-    logger.info(f"📤 Paramètres: access_token=[MASQUÉ]")
-    logger.info(f"📤 Headers: {headers}")
-    logger.info(f"📤 Données: {json.dumps(data, indent=2)}")
-    
     try:
-        response = requests.post(url, params=params, headers=headers, json=data, timeout=10)
+        response = requests.post(
+            url,
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            headers={"Content-Type": "application/json"},
+            json=data,
+            timeout=10
+        )
         
         logger.info(f"📤 Réponse HTTP: {response.status_code}")
-        logger.info(f"📤 Headers de réponse: {dict(response.headers)}")
-        
-        try:
-            response_data = response.json()
-            logger.info(f"📤 Réponse JSON: {json.dumps(response_data, indent=2)}")
-        except:
-            logger.info(f"📤 Réponse texte: {response.text}")
         
         if response.status_code == 200:
-            logger.info(f"✅ Message envoyé avec succès à {recipient_id}")
-            return {"success": True, "status_code": response.status_code}
+            return {"success": True}
         else:
-            logger.error(f"❌ Erreur d'envoi: HTTP {response.status_code}")
-            logger.error(f"❌ Détails: {response.text}")
-            return {"success": False, "status_code": response.status_code, "error": response.text}
+            logger.error(f"❌ Erreur envoi: {response.text}")
+            return {"success": False, "error": response.text}
             
-    except requests.exceptions.Timeout as e:
-        logger.error(f"⏰ Timeout lors de l'envoi: {str(e)}")
-        return {"success": False, "error": "Timeout"}
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"🌐 Erreur de connexion: {str(e)}")
-        return {"success": False, "error": "Connection error"}
-    except requests.exceptions.RequestException as e:
-        logger.error(f"📡 Erreur de requête: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ Exception envoi: {e}")
         return {"success": False, "error": str(e)}
 
 @app.route("/health", methods=['GET'])
 def health_check():
-    """Endpoint de santé détaillé pour Render"""
-    health_data = {
+    """Health check avec infos détaillées"""
+    return jsonify({
         "status": "healthy",
-        "bot": "NakamaBot",
+        "bot": "NakamaBot Otaku Edition",
         "timestamp": datetime.now().isoformat(),
+        "commands_count": len(COMMANDS),
+        "commands_list": list(COMMANDS.keys()),
+        "openai_ready": bool(client),
         "config": {
             "verify_token_set": bool(VERIFY_TOKEN),
             "page_token_set": bool(PAGE_ACCESS_TOKEN),
-            "page_token_length": len(PAGE_ACCESS_TOKEN) if PAGE_ACCESS_TOKEN else 0
-        },
-        "environment": {
-            "port": os.environ.get("PORT", "5000"),
-            "python_version": os.sys.version,
-            "flask_version": getattr(__import__('flask'), '__version__', 'unknown')
+            "openai_key_set": bool(OPENAI_API_KEY)
         }
-    }
+    }), 200
+
+@app.route("/commands", methods=['GET'])
+def list_commands():
+    """API pour lister toutes les commandes disponibles"""
+    commands_info = {}
+    for name, info in COMMANDS.items():
+        commands_info[name] = {
+            'name': name,
+            'description': info['description']
+        }
     
-    logger.info(f"🏥 Health check effectué: {json.dumps(health_data, indent=2)}")
-    return jsonify(health_data), 200
-
-@app.route("/test-send/<recipient_id>/<message>", methods=['GET'])
-def test_send(recipient_id, message):
-    """Endpoint de test pour envoyer un message manuellement"""
-    logger.info(f"🧪 Test d'envoi manuel à {recipient_id}: {message}")
-    result = send_message(recipient_id, f"🧪 Test manuel: {message}")
-    return jsonify(result)
-
-# Gestionnaire d'erreurs global
-@app.errorhandler(Exception)
-def handle_exception(e):
-    logger.error(f"💥 Erreur non gérée: {str(e)}")
-    logger.error(f"💥 Type: {type(e).__name__}")
-    import traceback
-    logger.error(f"💥 Traceback: {traceback.format_exc()}")
-    return jsonify({"error": "Internal server error", "details": str(e)}), 500
+    return jsonify({
+        "total_commands": len(COMMANDS),
+        "commands": commands_info
+    })
 
 if __name__ == "__main__":
-    # Configuration pour le déploiement avec logs de démarrage
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage de NakamaBot...")
-    logger.info(f"🌐 Port: {port}")
-    logger.info(f"🔑 VERIFY_TOKEN défini: {bool(VERIFY_TOKEN)}")
-    logger.info(f"🔑 PAGE_ACCESS_TOKEN défini: {bool(PAGE_ACCESS_TOKEN)}")
-    
-    if PAGE_ACCESS_TOKEN:
-        logger.info(f"🔑 Longueur du token: {len(PAGE_ACCESS_TOKEN)}")
-        logger.info(f"🔑 Token commence par: {PAGE_ACCESS_TOKEN[:10]}...")
+    logger.info("🚀 Démarrage NakamaBot Otaku Edition...")
+    logger.info(f"🎌 Commandes chargées: {len(COMMANDS)}")
+    logger.info(f"📋 Liste: {list(COMMANDS.keys())}")
+    logger.info(f"🤖 OpenAI ready: {bool(client)}")
     
     app.run(host="0.0.0.0", port=port, debug=False)
