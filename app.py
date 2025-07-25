@@ -533,7 +533,7 @@ Jeux actifs: {len(game_sessions)}"""
 🌐 JSONBin: {'✅' if storage else '❌'}
 🔐 Admin ID: {sender_id}
 👨‍💻 Créateur: Durand
-📝 Version: 3.0 (JSONBin)"""
+📝 Version: 3.0 """
     
     elif action == "save":
         success = save_to_storage()
