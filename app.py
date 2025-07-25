@@ -1155,4 +1155,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"❌ Erreur critique au démarrage: {e}")
         raise
-        "
