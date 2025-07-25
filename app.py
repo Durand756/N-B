@@ -6,6 +6,7 @@ import inspect
 from flask import Flask, request, jsonify
 import requests
 from datetime import datetime
+from collections import defaultdict, deque
 
 # Configuration du logging
 logging.basicConfig(
@@ -20,6 +21,10 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+
+# 💾 SYSTÈME DE MÉMOIRE
+user_memory = defaultdict(lambda: deque(maxlen=3))  # Garde les 3 derniers messages par user
+user_list = set()  # Liste des utilisateurs pour broadcast
 
 # Validation des tokens
 if not PAGE_ACCESS_TOKEN:
@@ -72,6 +77,47 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.8):
         logger.error(f"Exception Mistral API: {e}")
         return None
 
+def add_to_memory(user_id, message_type, content):
+    """Ajoute un message à la mémoire de l'utilisateur"""
+    user_memory[user_id].append({
+        'type': message_type,  # 'user' ou 'bot'
+        'content': content,
+        'timestamp': datetime.now().isoformat()
+    })
+    logger.info(f"💾 Mémoire {user_id}: {len(user_memory[user_id])} messages")
+
+def get_memory_context(user_id):
+    """Récupère le contexte des messages précédents"""
+    if user_id not in user_memory or not user_memory[user_id]:
+        return []
+    
+    context = []
+    for msg in user_memory[user_id]:
+        role = "user" if msg['type'] == 'user' else "assistant"
+        context.append({
+            "role": role,
+            "content": msg['content']
+        })
+    
+    return context
+
+def broadcast_message(message_text):
+    """Envoie un message à tous les utilisateurs connus"""
+    success_count = 0
+    total_users = len(user_list)
+    
+    logger.info(f"📢 Broadcast à {total_users} utilisateurs: {message_text}")
+    
+    for user_id in user_list.copy():  # Copie pour éviter les modifications pendant l'itération
+        result = send_message(user_id, message_text)
+        if result.get("success"):
+            success_count += 1
+        else:
+            logger.warning(f"⚠️ Échec broadcast pour {user_id}")
+    
+    logger.info(f"📊 Broadcast terminé: {success_count}/{total_users} succès")
+    return {"sent": success_count, "total": total_users}
+
 # 🎭 Dictionnaire des commandes (auto-généré)
 COMMANDS = {}
 
@@ -111,9 +157,9 @@ def cmd_start(sender_id, message_text=""):
     else:
         return "🌟 Konnichiwa, nakama! Je suis NakamaBot! ⚡\n🎯 Ton compagnon otaku ultime pour parler anime, manga et bien plus!\n✨ Tape /help pour mes super pouvoirs! 🚀"
 
-@command('ia', '🧠 Discussion libre avec une IA otaku kawaii')
+@command('ia', '🧠 Discussion libre avec une IA otaku kawaii (avec mémoire!)')
 def cmd_ia(sender_id, message_text=""):
-    """Chat libre avec personnalité otaku"""
+    """Chat libre avec personnalité otaku et mémoire contextuelle"""
     # Si pas de texte, engage la conversation
     if not message_text.strip():
         topics = [
@@ -125,18 +171,29 @@ def cmd_ia(sender_id, message_text=""):
         ]
         return f"💭 {random.choice(topics)} ✨"
     
+    # Récupérer le contexte des messages précédents
+    memory_context = get_memory_context(sender_id)
+    
+    # Construire les messages avec contexte
     messages = [{
         "role": "system",
-        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Réponds en français avec :
+        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Tu as une mémoire des conversations précédentes. Réponds en français avec :
         - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
         - Beaucoup d'emojis anime
         - Références anime/manga naturelles
         - Style parfois tsundere ou badass selon le contexte
+        - Utilise le contexte des messages précédents pour une conversation fluide
         - Maximum 400 caractères"""
-    }, {
+    }]
+    
+    # Ajouter le contexte des messages précédents
+    messages.extend(memory_context)
+    
+    # Ajouter le nouveau message
+    messages.append({
         "role": "user",
         "content": message_text
-    }]
+    })
     
     ai_response = call_mistral_api(messages, max_tokens=200, temperature=0.8)
     
@@ -144,6 +201,79 @@ def cmd_ia(sender_id, message_text=""):
         return f"💖 {ai_response}"
     else:
         return "💭 Mon cerveau otaku bug un peu là... Retry, onegaishimasu! 🥺"
+
+@command('story', '📖 Histoires courtes isekai/shonen sur mesure (avec suite!)')
+def cmd_story(sender_id, message_text=""):
+    """Histoires courtes personnalisées avec continuité"""
+    theme = message_text.strip() or "isekai"
+    
+    # Récupérer le contexte pour continuer une histoire
+    memory_context = get_memory_context(sender_id)
+    
+    # Vérifier s'il y a une histoire en cours
+    has_previous_story = any("📖" in msg.get("content", "") for msg in memory_context)
+    
+    messages = [{
+        "role": "system",
+        "content": f"""Tu es un conteur otaku. {'Continue l\'histoire précédente' if has_previous_story else 'Écris une nouvelle histoire'} {theme} avec :
+        - Protagoniste attachant
+        - Situation intéressante
+        - Style anime/manga
+        - {'Suite logique de l\'histoire' if has_previous_story else 'Début captivant'}
+        - Maximum 500 caractères
+        - Beaucoup d'action et d'émotion"""
+    }]
+    
+    # Ajouter le contexte si histoire en cours
+    if has_previous_story:
+        messages.extend(memory_context)
+    
+    messages.append({
+        "role": "user",
+        "content": f"{'Continue l\'histoire' if has_previous_story else 'Raconte-moi une histoire'} {theme}!"
+    })
+    
+    ai_response = call_mistral_api(messages, max_tokens=250, temperature=0.9)
+    
+    if ai_response:
+        continuation_text = "🔄 SUITE" if has_previous_story else "📖⚡ NOUVELLE HISTOIRE"
+        return f"{continuation_text} {theme.upper()}!\n\n{ai_response}\n\n✨ Tape /story pour la suite!"
+    else:
+        return "📖 Akira se réveille dans un monde magique où ses connaissances d'otaku deviennent des sorts! Son premier ennemi? Un démon qui déteste les animes! 'Maudit otaku!' crie-t-il. Akira sourit: 'KAMEHAMEHA!' ⚡✨"
+
+@command('memory', '💾 Voir l\'historique de nos conversations!')
+def cmd_memory(sender_id, message_text=""):
+    """Affiche la mémoire des conversations"""
+    if sender_id not in user_memory or not user_memory[sender_id]:
+        return "💾 Aucune conversation précédente, nakama! C'est notre premier échange! ✨"
+    
+    memory_text = "💾🎌 MÉMOIRE DE NOS AVENTURES!\n\n"
+    
+    for i, msg in enumerate(user_memory[sender_id], 1):
+        emoji = "🗨️" if msg['type'] == 'user' else "🤖"
+        content_preview = msg['content'][:80] + "..." if len(msg['content']) > 80 else msg['content']
+        memory_text += f"{emoji} {i}. {content_preview}\n"
+    
+    memory_text += f"\n💭 {len(user_memory[sender_id])}/3 messages en mémoire"
+    memory_text += "\n✨ Je me souviens de tout, nakama!"
+    
+    return memory_text
+
+@command('broadcast', '📢 [ADMIN] Envoie un message à tous les nakamas!')
+def cmd_broadcast(sender_id, message_text=""):
+    """Fonction broadcast pour admin (simplifiée - ajoutez vos vérifications admin)"""
+    if not message_text.strip():
+        return "📢 Usage: /broadcast [message]\n⚠️ Envoie à TOUS les utilisateurs!"
+    
+    # 🚨 ATTENTION: Ici vous devriez ajouter une vérification admin
+    # Exemple: if sender_id not in ADMIN_IDS: return "❌ Accès refusé"
+    
+    # Message style NakamaBot
+    broadcast_text = f"📢🎌 ANNONCE NAKAMA!\n\n{message_text}\n\n⚡ - Votre NakamaBot dévoué 💖"
+    
+    result = broadcast_message(broadcast_text)
+    
+    return f"📊 Broadcast envoyé à {result['sent']}/{result['total']} nakamas! ✨"
 
 @command('waifu', '👸 Génère ta waifu parfaite avec IA!')
 def cmd_waifu(sender_id, message_text=""):
@@ -271,32 +401,6 @@ def cmd_recommend(sender_id, message_text=""):
     else:
         return f"🎬 Pour {genre}:\n• Attack on Titan - Epic & sombre! ⚔️\n• Your Name - Romance qui fait pleurer 😭\n• One Piece - Aventure infinie! 🏴‍☠️\n\nBon anime time! ✨"
 
-@command('story', '📖 Histoires courtes isekai/shonen sur mesure!')
-def cmd_story(sender_id, message_text=""):
-    """Histoires courtes personnalisées"""
-    theme = message_text.strip() or "isekai"
-    
-    messages = [{
-        "role": "system",
-        "content": f"""Écris une histoire courte {theme} avec :
-        - Protagoniste attachant
-        - Situation intéressante
-        - Style anime/manga
-        - Fin ouverte ou épique
-        - Maximum 500 caractères
-        - Beaucoup d'action et d'émotion"""
-    }, {
-        "role": "user",
-        "content": f"Raconte-moi une histoire {theme}!"
-    }]
-    
-    ai_response = call_mistral_api(messages, max_tokens=250, temperature=0.9)
-    
-    if ai_response:
-        return f"📖⚡ HISTOIRE {theme.upper()}!\n\n{ai_response}\n\n✨ Suite au prochain épisode?"
-    else:
-        return "📖 Akira se réveille dans un monde magique où ses connaissances d'otaku deviennent des sorts! Son premier ennemi? Un démon qui déteste les animes! 'Maudit otaku!' crie-t-il. Akira sourit: 'KAMEHAMEHA!' ⚡✨"
-
 @command('translate', '🌐 Traduction otaku FR ↔ JP avec style!')
 def cmd_translate(sender_id, message_text=""):
     """Traduction avec style otaku"""
@@ -360,6 +464,7 @@ def cmd_help(sender_id, message_text=""):
     
     help_text += "\n🔥 Utilisation: Tape / + commande"
     help_text += "\n💡 Ex: /waifu, /ia salut!, /recommend shonen"
+    help_text += "\n💾 J'ai maintenant une mémoire des 3 derniers messages!"
     help_text += "\n\n⚡ Powered by Mistral AI - Créé avec amour pour les otakus! 💖"
     
     return help_text
@@ -373,7 +478,9 @@ def home():
         "timestamp": datetime.now().isoformat(),
         "commands_loaded": len(COMMANDS),
         "ai_ready": bool(MISTRAL_API_KEY),
-        "ai_provider": "Mistral AI"
+        "ai_provider": "Mistral AI",
+        "active_users": len(user_list),
+        "memory_enabled": True
     })
 
 @app.route("/webhook", methods=['GET', 'POST'])
@@ -406,6 +513,9 @@ def webhook():
                 for messaging_event in entry.get('messaging', []):
                     sender_id = messaging_event.get('sender', {}).get('id')
                     
+                    # Ajouter l'utilisateur à la liste
+                    user_list.add(sender_id)
+                    
                     if 'message' in messaging_event:
                         message_data = messaging_event['message']
                         
@@ -416,8 +526,14 @@ def webhook():
                         message_text = message_data.get('text', '').strip()
                         logger.info(f"💬 Message de {sender_id}: '{message_text}'")
                         
+                        # Ajouter le message de l'utilisateur à la mémoire
+                        add_to_memory(sender_id, 'user', message_text)
+                        
                         # Traitement des commandes
                         response_text = process_command(sender_id, message_text)
+                        
+                        # Ajouter la réponse du bot à la mémoire
+                        add_to_memory(sender_id, 'bot', response_text)
                         
                         # Envoi de la réponse
                         send_result = send_message(sender_id, response_text)
@@ -507,6 +623,8 @@ def health_check():
         "commands_list": list(COMMANDS.keys()),
         "mistral_ready": bool(MISTRAL_API_KEY),
         "ai_provider": "Mistral AI",
+        "active_users": len(user_list),
+        "memory_enabled": True,
         "config": {
             "verify_token_set": bool(VERIFY_TOKEN),
             "page_token_set": bool(PAGE_ACCESS_TOKEN),
@@ -527,8 +645,49 @@ def list_commands():
     return jsonify({
         "total_commands": len(COMMANDS),
         "commands": commands_info,
-        "ai_provider": "Mistral AI"
+        "ai_provider": "Mistral AI",
+        "memory_enabled": True,
+        "active_users": len(user_list)
     })
+
+@app.route("/startup-broadcast", methods=['POST'])
+def startup_broadcast():
+    """Route pour envoyer le message de mise à jour au démarrage"""
+    message = "🎌⚡ MISE À JOUR NAKAMA COMPLETED! ⚡🎌\n\n✨ Votre NakamaBot préféré vient d'être upgradé par Durand-sensei!\n\n🆕 Nouvelles fonctionnalités:\n💾 Mémoire des conversations\n🔄 Continuité des histoires\n📢 Système d'annonces\n\n🚀 Prêt pour de nouvelles aventures otaku!\n\n⚡ Tape /help pour découvrir toutes mes nouvelles techniques secrètes, nakama! 💖"
+    
+    result = broadcast_message(message)
+    
+    return jsonify({
+        "status": "broadcast_sent",
+        "message": "Mise à jour annoncée",
+        "sent_to": result['sent'],
+        "total_users": result['total']
+    })
+
+@app.route("/memory-stats", methods=['GET'])
+def memory_stats():
+    """Statistiques sur la mémoire des utilisateurs"""
+    stats = {
+        "total_users_with_memory": len(user_memory),
+        "total_users_active": len(user_list),
+        "memory_details": {}
+    }
+    
+    for user_id, memory in user_memory.items():
+        stats["memory_details"][user_id] = {
+            "messages_count": len(memory),
+            "last_interaction": memory[-1]['timestamp'] if memory else None
+        }
+    
+    return jsonify(stats)
+
+def send_startup_notification():
+    """Envoie automatiquement le message de mise à jour au démarrage"""
+    if user_list:  # Seulement s'il y a des utilisateurs
+        startup_message = "🎌⚡ SYSTÈME NAKAMA REDÉMARRÉ! ⚡🎌\n\n✨ Durand-sensei vient de mettre à jour mes circuits!\n\n🆕 Nouvelles capacités débloquées:\n💾 Mémoire conversationnelle activée\n🔄 Mode histoire continue\n📢 Système de diffusion\n\n🚀 Je suis plus kawaii que jamais!\n\n⚡ Prêt pour nos prochaines aventures, nakama! 💖"
+        
+        result = broadcast_message(startup_message)
+        logger.info(f"🚀 Message de démarrage envoyé à {result['sent']}/{result['total']} utilisateurs")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
@@ -537,5 +696,20 @@ if __name__ == "__main__":
     logger.info(f"🎌 Commandes chargées: {len(COMMANDS)}")
     logger.info(f"📋 Liste: {list(COMMANDS.keys())}")
     logger.info(f"🤖 Mistral AI ready: {bool(MISTRAL_API_KEY)}")
+    logger.info(f"💾 Système de mémoire: Activé (3 messages)")
+    logger.info(f"📢 Système de broadcast: Activé")
+    
+    # Envoyer le message de démarrage après un court délai
+    import threading
+    import time
+    
+    def delayed_startup_notification():
+        time.sleep(5)  # Attendre 5 secondes que le serveur soit prêt
+        send_startup_notification()
+    
+    # Lancer la notification en arrière-plan
+    notification_thread = threading.Thread(target=delayed_startup_notification)
+    notification_thread.daemon = True
+    notification_thread.start()
     
     app.run(host="0.0.0.0", port=port, debug=False)
