@@ -7,6 +7,12 @@ from flask import Flask, request, jsonify
 import requests
 from datetime import datetime
 from collections import defaultdict, deque
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+import io
+import threading
+import time
 
 # Configuration du logging
 logging.basicConfig(
@@ -22,9 +28,174 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
+# 🔐 Configuration Admin et Google Drive
+ADMIN_IDS = set(os.getenv("ADMIN_IDS", "").split(","))  # IDs des admins séparés par virgules
+GOOGLE_DRIVE_CREDENTIALS = os.getenv("GOOGLE_DRIVE_CREDENTIALS", "")  # JSON des credentials
+DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")  # ID du dossier Drive
+
 # 💾 SYSTÈME DE MÉMOIRE
 user_memory = defaultdict(lambda: deque(maxlen=3))  # Garde les 3 derniers messages par user
 user_list = set()  # Liste des utilisateurs pour broadcast
+
+# 🌐 Service Google Drive
+drive_service = None
+
+def init_google_drive():
+    """Initialise le service Google Drive"""
+    global drive_service
+    
+    if not GOOGLE_DRIVE_CREDENTIALS or not DRIVE_FOLDER_ID:
+        logger.warning("⚠️ Google Drive non configuré - Les données ne seront pas sauvegardées")
+        return False
+    
+    try:
+        # Parser les credentials JSON
+        if GOOGLE_DRIVE_CREDENTIALS.startswith('{'):
+            credentials_info = json.loads(GOOGLE_DRIVE_CREDENTIALS)
+        else:
+            # Si c'est un fichier
+            with open(GOOGLE_DRIVE_CREDENTIALS, 'r') as f:
+                credentials_info = json.load(f)
+        
+        # Créer les credentials
+        credentials = Credentials.from_service_account_info(
+            credentials_info,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        
+        # Créer le service
+        drive_service = build('drive', 'v3', credentials=credentials)
+        
+        logger.info("✅ Google Drive initialisé avec succès")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur initialisation Google Drive: {e}")
+        return False
+
+def save_memory_to_drive():
+    """Sauvegarde la mémoire sur Google Drive"""
+    if not drive_service:
+        return False
+    
+    try:
+        # Préparer les données à sauvegarder
+        memory_data = {
+            'user_memory': {},
+            'user_list': list(user_list),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Convertir deque en list pour JSON
+        for user_id, messages in user_memory.items():
+            memory_data['user_memory'][user_id] = list(messages)
+        
+        # Créer le fichier JSON
+        json_data = json.dumps(memory_data, indent=2, ensure_ascii=False)
+        file_stream = io.StringIO(json_data)
+        
+        # Chercher si le fichier existe déjà
+        filename = "nakamabot_memory.json"
+        query = f"name='{filename}' and parents in '{DRIVE_FOLDER_ID}'"
+        results = drive_service.files().list(q=query).execute()
+        files = results.get('files', [])
+        
+        media = MediaIoBaseUpload(
+            io.BytesIO(json_data.encode('utf-8')),
+            mimetype='application/json'
+        )
+        
+        if files:
+            # Mettre à jour le fichier existant
+            file_id = files[0]['id']
+            drive_service.files().update(
+                fileId=file_id,
+                media_body=media
+            ).execute()
+            logger.info(f"💾 Mémoire mise à jour sur Drive (ID: {file_id})")
+        else:
+            # Créer un nouveau fichier
+            file_metadata = {
+                'name': filename,
+                'parents': [DRIVE_FOLDER_ID]
+            }
+            file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+            logger.info(f"💾 Nouvelle sauvegarde créée sur Drive (ID: {file.get('id')})")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur sauvegarde Drive: {e}")
+        return False
+
+def load_memory_from_drive():
+    """Charge la mémoire depuis Google Drive"""
+    global user_memory, user_list
+    
+    if not drive_service:
+        return False
+    
+    try:
+        # Chercher le fichier de mémoire
+        filename = "nakamabot_memory.json"
+        query = f"name='{filename}' and parents in '{DRIVE_FOLDER_ID}'"
+        results = drive_service.files().list(q=query).execute()
+        files = results.get('files', [])
+        
+        if not files:
+            logger.info("📁 Aucune sauvegarde trouvée sur Drive")
+            return False
+        
+        # Télécharger le fichier
+        file_id = files[0]['id']
+        request = drive_service.files().get_media(fileId=file_id)
+        file_stream = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_stream, request)
+        
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+        
+        # Parser les données
+        file_stream.seek(0)
+        memory_data = json.loads(file_stream.read().decode('utf-8'))
+        
+        # Restaurer la mémoire
+        user_memory.clear()
+        for user_id, messages in memory_data.get('user_memory', {}).items():
+            user_memory[user_id] = deque(messages, maxlen=3)
+        
+        # Restaurer la liste d'utilisateurs
+        user_list.update(memory_data.get('user_list', []))
+        
+        saved_time = memory_data.get('timestamp', 'Inconnu')
+        logger.info(f"✅ Mémoire chargée depuis Drive - Sauvegarde du {saved_time}")
+        logger.info(f"📊 {len(user_memory)} utilisateurs et {len(user_list)} contacts restaurés")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur chargement Drive: {e}")
+        return False
+
+def auto_save_memory():
+    """Sauvegarde automatique périodique"""
+    def save_loop():
+        while True:
+            time.sleep(300)  # Sauvegarder toutes les 5 minutes
+            if user_memory or user_list:
+                success = save_memory_to_drive()
+                if success:
+                    logger.info("🔄 Sauvegarde automatique réussie")
+    
+    if drive_service:
+        thread = threading.Thread(target=save_loop, daemon=True)
+        thread.start()
+        logger.info("🔄 Sauvegarde automatique activée (toutes les 5 min)")
 
 # Validation des tokens
 if not PAGE_ACCESS_TOKEN:
@@ -36,6 +207,12 @@ if not MISTRAL_API_KEY:
     logger.error("❌ MISTRAL_API_KEY is missing!")
 else:
     logger.info("✅ MISTRAL_API_KEY configuré")
+
+# Validation Admin
+if ADMIN_IDS and list(ADMIN_IDS)[0]:  # Vérifier que ce n'est pas juste une chaîne vide
+    logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs configurés")
+else:
+    logger.warning("⚠️ Aucun administrateur configuré - Broadcast désactivé")
 
 # Configuration Mistral API
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
@@ -78,13 +255,17 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.8):
         return None
 
 def add_to_memory(user_id, message_type, content):
-    """Ajoute un message à la mémoire de l'utilisateur"""
+    """Ajoute un message à la mémoire de l'utilisateur et sauvegarde"""
     user_memory[user_id].append({
         'type': message_type,  # 'user' ou 'bot'
         'content': content,
         'timestamp': datetime.now().isoformat()
     })
     logger.info(f"💾 Mémoire {user_id}: {len(user_memory[user_id])} messages")
+    
+    # Sauvegarde asynchrone
+    if drive_service:
+        threading.Thread(target=save_memory_to_drive, daemon=True).start()
 
 def get_memory_context(user_id):
     """Récupère le contexte des messages précédents"""
@@ -100,6 +281,10 @@ def get_memory_context(user_id):
         })
     
     return context
+
+def is_admin(user_id):
+    """Vérifie si un utilisateur est administrateur"""
+    return str(user_id) in ADMIN_IDS
 
 def broadcast_message(message_text):
     """Envoie un message à tous les utilisateurs connus"""
@@ -157,7 +342,7 @@ def cmd_start(sender_id, message_text=""):
     else:
         return "🌟 Konnichiwa, nakama! Je suis NakamaBot! ⚡\n🎯 Ton compagnon otaku ultime pour parler anime, manga et bien plus!\n✨ Tape /help pour mes super pouvoirs! 🚀"
 
-@command('ia', '🧠 Discussion libre avec une IA otaku kawaii (avec mémoire!)')
+@command('ia', '🧠 Discussion libre avec une IA otaku kawaii (avec mémoire persistante!)')
 def cmd_ia(sender_id, message_text=""):
     """Chat libre avec personnalité otaku et mémoire contextuelle"""
     # Si pas de texte, engage la conversation
@@ -177,7 +362,7 @@ def cmd_ia(sender_id, message_text=""):
     # Construire les messages avec contexte
     messages = [{
         "role": "system",
-        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Tu as une mémoire des conversations précédentes. Réponds en français avec :
+        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Tu as une mémoire persistante des conversations précédentes. Réponds en français avec :
         - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
         - Beaucoup d'emojis anime
         - Références anime/manga naturelles
@@ -202,7 +387,7 @@ def cmd_ia(sender_id, message_text=""):
     else:
         return "💭 Mon cerveau otaku bug un peu là... Retry, onegaishimasu! 🥺"
 
-@command('story', '📖 Histoires courtes isekai/shonen sur mesure (avec suite!)')
+@command('story', '📖 Histoires courtes isekai/shonen sur mesure (avec suite persistante!)')
 def cmd_story(sender_id, message_text=""):
     """Histoires courtes personnalisées avec continuité"""
     theme = message_text.strip() or "isekai"
@@ -241,13 +426,13 @@ def cmd_story(sender_id, message_text=""):
     else:
         return "📖 Akira se réveille dans un monde magique où ses connaissances d'otaku deviennent des sorts! Son premier ennemi? Un démon qui déteste les animes! 'Maudit otaku!' crie-t-il. Akira sourit: 'KAMEHAMEHA!' ⚡✨"
 
-@command('memory', '💾 Voir l\'historique de nos conversations!')
+@command('memory', '💾 Voir l\'historique persistant de nos conversations!')
 def cmd_memory(sender_id, message_text=""):
     """Affiche la mémoire des conversations"""
     if sender_id not in user_memory or not user_memory[sender_id]:
         return "💾 Aucune conversation précédente, nakama! C'est notre premier échange! ✨"
     
-    memory_text = "💾🎌 MÉMOIRE DE NOS AVENTURES!\n\n"
+    memory_text = "💾🎌 MÉMOIRE PERSISTANTE DE NOS AVENTURES!\n\n"
     
     for i, msg in enumerate(user_memory[sender_id], 1):
         emoji = "🗨️" if msg['type'] == 'user' else "🤖"
@@ -255,25 +440,27 @@ def cmd_memory(sender_id, message_text=""):
         memory_text += f"{emoji} {i}. {content_preview}\n"
     
     memory_text += f"\n💭 {len(user_memory[sender_id])}/3 messages en mémoire"
-    memory_text += "\n✨ Je me souviens de tout, nakama!"
+    memory_text += "\n🌐 Sauvegardé sur Google Drive automatiquement!"
+    memory_text += "\n✨ Je me souviens de tout, même après redémarrage!"
     
     return memory_text
 
-@command('broadcast', '📢 [ADMIN] Envoie un message à tous les nakamas!')
+@command('broadcast', '📢 [ADMIN ONLY] Envoie un message à tous les nakamas!')
 def cmd_broadcast(sender_id, message_text=""):
-    """Fonction broadcast pour admin (simplifiée - ajoutez vos vérifications admin)"""
+    """Fonction broadcast sécurisée pour admins seulement"""
+    # 🔐 VÉRIFICATION ADMIN OBLIGATOIRE
+    if not is_admin(sender_id):
+        return "🔐 Accès refusé! Seuls les admins peuvent utiliser cette commande, nakama! ❌\n✨ Tu n'as pas les permissions nécessaires."
+    
     if not message_text.strip():
-        return "📢 Usage: /broadcast [message]\n⚠️ Envoie à TOUS les utilisateurs!"
+        return "📢 Usage: /broadcast [message]\n⚠️ Envoie à TOUS les utilisateurs!\n🔐 Commande admin seulement"
     
-    # 🚨 ATTENTION: Ici vous devriez ajouter une vérification admin
-    # Exemple: if sender_id not in ADMIN_IDS: return "❌ Accès refusé"
-    
-    # Message style NakamaBot
-    broadcast_text = f"📢🎌 ANNONCE NAKAMA!\n\n{message_text}\n\n⚡ - Votre NakamaBot dévoué 💖"
+    # Message style NakamaBot avec signature admin
+    broadcast_text = f"📢🎌 ANNONCE ADMIN NAKAMA!\n\n{message_text}\n\n⚡ - Message officiel des admins NakamaBot 💖"
     
     result = broadcast_message(broadcast_text)
     
-    return f"📊 Broadcast envoyé à {result['sent']}/{result['total']} nakamas! ✨"
+    return f"📊 Broadcast admin envoyé à {result['sent']}/{result['total']} nakamas! ✨\n🔐 Action enregistrée comme admin."
 
 @command('waifu', '👸 Génère ta waifu parfaite avec IA!')
 def cmd_waifu(sender_id, message_text=""):
@@ -454,18 +641,134 @@ def cmd_mood(sender_id, message_text=""):
     else:
         return f"😊 Je sens que tu as besoin de réconfort!\n🎬 Regarde 'Your Name' ou 'Spirited Away'\n💝 Tout ira mieux, nakama! Ganbatte!"
 
+@command('admin', '🔐 [ADMIN] Commandes d\'administration du bot!')
+def cmd_admin(sender_id, message_text=""):
+    """Commandes d'administration sécurisées"""
+    if not is_admin(sender_id):
+        return "🔐 Accès refusé! Tu n'es pas administrateur, nakama! ❌"
+    
+    if not message_text.strip():
+        return """🔐⚡ PANNEAU ADMIN NAKAMABOT! ⚡🔐
+
+📊 Commandes disponibles:
+• /admin stats - Statistiques détaillées
+• /admin users - Liste des utilisateurs  
+• /admin save - Force la sauvegarde Drive
+• /admin load - Recharge depuis Drive
+• /admin memory - Stats mémoire globale
+• /broadcast [message] - Diffusion générale
+
+🌐 Google Drive: {'✅ Connecté' if drive_service else '❌ Déconnecté'}
+💾 Utilisateurs en mémoire: {len(user_memory)}
+📱 Utilisateurs actifs: {len(user_list)}
+
+⚡ Tu as le pouvoir, admin-sama! 💖"""
+    
+    action = message_text.strip().lower()
+    
+    if action == "stats":
+        total_messages = sum(len(messages) for messages in user_memory.values())
+        return f"""📊🔐 STATISTIQUES ADMIN
+
+👥 Utilisateurs total: {len(user_list)}
+💾 Utilisateurs avec mémoire: {len(user_memory)}
+💬 Messages total stockés: {total_messages}
+🌐 Google Drive: {'✅ Opérationnel' if drive_service else '❌ Indisponible'}
+🔐 Admins configurés: {len(ADMIN_IDS)}
+
+🎌 Commandes exécutées: {len(COMMANDS)}
+⚡ Bot status: Opérationnel depuis le démarrage
+💖 Ready to serve, admin-sama!"""
+    
+    elif action == "users":
+        if not user_list:
+            return "👥 Aucun utilisateur enregistré pour le moment!"
+        
+        user_text = "👥🔐 LISTE DES UTILISATEURS:\n\n"
+        for i, user_id in enumerate(list(user_list)[:10], 1):  # Limite à 10 pour éviter les messages trop longs
+            admin_marker = " 🔐" if is_admin(user_id) else ""
+            memory_count = len(user_memory.get(user_id, []))
+            user_text += f"{i}. {user_id}{admin_marker} ({memory_count} msg)\n"
+        
+        if len(user_list) > 10:
+            user_text += f"\n... et {len(user_list) - 10} autres utilisateurs"
+        
+        return user_text
+    
+    elif action == "save":
+        if not drive_service:
+            return "❌ Google Drive non configuré! Impossible de sauvegarder."
+        
+        success = save_memory_to_drive()
+        if success:
+            return f"✅ Sauvegarde forcée réussie!\n💾 {len(user_memory)} utilisateurs et {len(user_list)} contacts sauvegardés"
+        else:
+            return "❌ Échec de la sauvegarde! Vérifiez les logs."
+    
+    elif action == "load":
+        if not drive_service:
+            return "❌ Google Drive non configuré! Impossible de charger."
+        
+        success = load_memory_from_drive()
+        if success:
+            return f"✅ Mémoire rechargée depuis Drive!\n💾 {len(user_memory)} utilisateurs et {len(user_list)} contacts restaurés"
+        else:
+            return "❌ Échec du chargement! Aucune sauvegarde trouvée ou erreur."
+    
+    elif action == "memory":
+        memory_details = []
+        for user_id, messages in list(user_memory.items())[:5]:  # Top 5
+            last_msg = messages[-1]['timestamp'] if messages else "Jamais"
+            memory_details.append(f"• {user_id}: {len(messages)} msg (dernière: {last_msg[:10]})")
+        
+        return f"""💾🔐 MÉMOIRE GLOBALE:
+
+📊 Total utilisateurs: {len(user_memory)}
+💬 Messages en mémoire: {sum(len(m) for m in user_memory.values())}
+
+🔝 Top 5 utilisateurs actifs:
+{chr(10).join(memory_details)}
+
+🌐 Sauvegarde auto: {'✅ Active' if drive_service else '❌ Désactivée'}
+💾 Limite par utilisateur: 3 messages"""
+    
+    else:
+        return f"❓ Action '{action}' inconnue!\n💡 Tape /admin pour voir les commandes disponibles."
+
 @command('help', '❓ Guide complet de toutes mes techniques secrètes!')
 def cmd_help(sender_id, message_text=""):
     """Génère automatiquement l'aide basée sur toutes les commandes"""
     help_text = "🎌⚡ NAKAMA BOT - GUIDE ULTIME! ⚡🎌\n\n"
     
+    # Séparer les commandes admin et utilisateur
+    user_commands = []
+    admin_commands = []
+    
     for cmd_name, cmd_info in COMMANDS.items():
-        help_text += f"/{cmd_name} - {cmd_info['description']}\n"
+        if "[ADMIN" in cmd_info['description']:
+            admin_commands.append(f"/{cmd_name} - {cmd_info['description']}")
+        else:
+            user_commands.append(f"/{cmd_name} - {cmd_info['description']}")
+    
+    # Afficher les commandes utilisateur
+    for cmd in user_commands:
+        help_text += f"{cmd}\n"
+    
+    # Afficher les commandes admin seulement si l'utilisateur est admin
+    if is_admin(sender_id) and admin_commands:
+        help_text += f"\n🔐 COMMANDES ADMIN:\n"
+        for cmd in admin_commands:
+            help_text += f"{cmd}\n"
     
     help_text += "\n🔥 Utilisation: Tape / + commande"
     help_text += "\n💡 Ex: /waifu, /ia salut!, /recommend shonen"
-    help_text += "\n💾 J'ai maintenant une mémoire des 3 derniers messages!"
-    help_text += "\n\n⚡ Powered by Mistral AI - Créé avec amour pour les otakus! 💖"
+    help_text += "\n💾 Mémoire persistante: Les 3 derniers messages sauvegardés!"
+    help_text += "\n🌐 Sauvegarde Google Drive automatique"
+    
+    if is_admin(sender_id):
+        help_text += f"\n🔐 Statut admin confirmé - Accès total débloqué!"
+    
+    help_text += "\n\n⚡ Powered by Mistral AI + Google Drive - Créé avec amour pour les otakus! 💖"
     
     return help_text
 
@@ -480,7 +783,10 @@ def home():
         "ai_ready": bool(MISTRAL_API_KEY),
         "ai_provider": "Mistral AI",
         "active_users": len(user_list),
-        "memory_enabled": True
+        "memory_enabled": True,
+        "google_drive": bool(drive_service),
+        "admin_count": len(ADMIN_IDS),
+        "security": "Admin-secured broadcast"
     })
 
 @app.route("/webhook", methods=['GET', 'POST'])
@@ -625,10 +931,15 @@ def health_check():
         "ai_provider": "Mistral AI",
         "active_users": len(user_list),
         "memory_enabled": True,
+        "google_drive_connected": bool(drive_service),
+        "admin_security": bool(ADMIN_IDS),
         "config": {
             "verify_token_set": bool(VERIFY_TOKEN),
             "page_token_set": bool(PAGE_ACCESS_TOKEN),
-            "mistral_key_set": bool(MISTRAL_API_KEY)
+            "mistral_key_set": bool(MISTRAL_API_KEY),
+            "drive_credentials_set": bool(GOOGLE_DRIVE_CREDENTIALS),
+            "drive_folder_set": bool(DRIVE_FOLDER_ID),
+            "admin_ids_set": bool(ADMIN_IDS)
         }
     }), 200
 
@@ -639,7 +950,8 @@ def list_commands():
     for name, info in COMMANDS.items():
         commands_info[name] = {
             'name': name,
-            'description': info['description']
+            'description': info['description'],
+            'admin_only': '[ADMIN' in info['description']
         }
     
     return jsonify({
@@ -647,13 +959,20 @@ def list_commands():
         "commands": commands_info,
         "ai_provider": "Mistral AI",
         "memory_enabled": True,
+        "google_drive_enabled": bool(drive_service),
+        "admin_security": bool(ADMIN_IDS),
         "active_users": len(user_list)
     })
 
 @app.route("/startup-broadcast", methods=['POST'])
 def startup_broadcast():
     """Route pour envoyer le message de mise à jour au démarrage"""
-    message = "🎌⚡ MISE À JOUR NAKAMA COMPLETED! ⚡🎌\n\n✨ Votre NakamaBot préféré vient d'être upgradé par Durand-sensei!\n\n🆕 Nouvelles fonctionnalités:\n💾 Mémoire des conversations\n🔄 Continuité des histoires\n📢 Système d'annonces\n\n🚀 Prêt pour de nouvelles aventures otaku!\n\n⚡ Tape /help pour découvrir toutes mes nouvelles techniques secrètes, nakama! 💖"
+    # Vérifier si c'est un appel autorisé (vous pouvez ajouter une clé API ici)
+    auth_key = request.headers.get('Authorization')
+    if auth_key != f"Bearer {VERIFY_TOKEN}":
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    message = "🎌⚡ MISE À JOUR NAKAMA COMPLETED! ⚡🎌\n\n✨ Votre NakamaBot préféré vient d'être upgradé par Durand-sensei!\n\n🆕 Nouvelles fonctionnalités:\n💾 Mémoire persistante (Google Drive)\n🔄 Continuité des histoires permanente\n🔐 Système admin sécurisé\n📢 Broadcast admin seulement\n\n🚀 Prêt pour de nouvelles aventures otaku!\n\n⚡ Tape /help pour découvrir toutes mes nouvelles techniques secrètes, nakama! 💖"
     
     result = broadcast_message(message)
     
@@ -661,7 +980,9 @@ def startup_broadcast():
         "status": "broadcast_sent",
         "message": "Mise à jour annoncée",
         "sent_to": result['sent'],
-        "total_users": result['total']
+        "total_users": result['total'],
+        "google_drive": bool(drive_service),
+        "admin_security": bool(ADMIN_IDS)
     })
 
 @app.route("/memory-stats", methods=['GET'])
@@ -670,21 +991,54 @@ def memory_stats():
     stats = {
         "total_users_with_memory": len(user_memory),
         "total_users_active": len(user_list),
+        "google_drive_connected": bool(drive_service),
+        "last_save_attempt": "Automatic every 5 minutes",
         "memory_details": {}
     }
     
     for user_id, memory in user_memory.items():
         stats["memory_details"][user_id] = {
             "messages_count": len(memory),
-            "last_interaction": memory[-1]['timestamp'] if memory else None
+            "last_interaction": memory[-1]['timestamp'] if memory else None,
+            "is_admin": is_admin(user_id)
         }
     
     return jsonify(stats)
 
+@app.route("/admin-control", methods=['POST'])
+def admin_control():
+    """API pour les contrôles admin externes"""
+    data = request.get_json()
+    action = data.get('action')
+    admin_key = request.headers.get('Admin-Key')
+    
+    # Vérification de sécurité simple (vous pouvez améliorer ceci)
+    if admin_key != VERIFY_TOKEN:
+        return jsonify({"error": "Unauthorized admin access"}), 401
+    
+    if action == "force_save":
+        success = save_memory_to_drive()
+        return jsonify({"success": success, "message": "Force save attempted"})
+    
+    elif action == "force_load":
+        success = load_memory_from_drive()
+        return jsonify({"success": success, "message": "Force load attempted"})
+    
+    elif action == "get_stats":
+        return jsonify({
+            "users_count": len(user_list),
+            "memory_count": len(user_memory),
+            "drive_connected": bool(drive_service),
+            "admin_count": len(ADMIN_IDS)
+        })
+    
+    else:
+        return jsonify({"error": "Unknown action"}), 400
+
 def send_startup_notification():
     """Envoie automatiquement le message de mise à jour au démarrage"""
     if user_list:  # Seulement s'il y a des utilisateurs
-        startup_message = "🎌⚡ SYSTÈME NAKAMA REDÉMARRÉ! ⚡🎌\n\n✨ Durand-sensei vient de mettre à jour mes circuits!\n\n🆕 Nouvelles capacités débloquées:\n💾 Mémoire conversationnelle activée\n🔄 Mode histoire continue\n📢 Système de diffusion\n\n🚀 Je suis plus kawaii que jamais!\n\n⚡ Prêt pour nos prochaines aventures, nakama! 💖"
+        startup_message = "🎌⚡ SYSTÈME NAKAMA REDÉMARRÉ! ⚡🎌\n\n✨ Durand-sensei vient de mettre à jour mes circuits!\n\n🆕 Nouvelles capacités débloquées:\n💾 Mémoire persistante Google Drive\n🔄 Mode histoire continue permanent\n🔐 Système admin sécurisé\n📢 Broadcast protégé\n\n🚀 Je suis plus kawaii et sécurisé que jamais!\n\n⚡ Prêt pour nos prochaines aventures, nakama! 💖"
         
         result = broadcast_message(startup_message)
         logger.info(f"🚀 Message de démarrage envoyé à {result['sent']}/{result['total']} utilisateurs")
@@ -693,16 +1047,32 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
     logger.info("🚀 Démarrage NakamaBot Otaku Edition...")
+    
+    # Initialiser Google Drive
+    drive_initialized = init_google_drive()
+    
+    # Charger la mémoire depuis Drive si possible
+    if drive_initialized:
+        load_success = load_memory_from_drive()
+        if load_success:
+            logger.info("✅ Mémoire chargée depuis Google Drive")
+        else:
+            logger.info("📁 Aucune sauvegarde trouvée - Démarrage avec mémoire vide")
+        
+        # Démarrer la sauvegarde automatique
+        auto_save_memory()
+    else:
+        logger.warning("⚠️ Google Drive non disponible - Mémoire non persistante")
+    
     logger.info(f"🎌 Commandes chargées: {len(COMMANDS)}")
     logger.info(f"📋 Liste: {list(COMMANDS.keys())}")
     logger.info(f"🤖 Mistral AI ready: {bool(MISTRAL_API_KEY)}")
-    logger.info(f"💾 Système de mémoire: Activé (3 messages)")
-    logger.info(f"📢 Système de broadcast: Activé")
+    logger.info(f"💾 Système de mémoire: Activé (3 messages) {'+ Google Drive' if drive_service else '+ Local seulement'}")
+    logger.info(f"📢 Système de broadcast: {'🔐 Sécurisé admin' if ADMIN_IDS else '⚠️ Non sécurisé'}")
+    logger.info(f"🔐 Administrateurs: {len(ADMIN_IDS)} configurés")
+    logger.info(f"👥 Utilisateurs en mémoire: {len(user_list)}")
     
     # Envoyer le message de démarrage après un court délai
-    import threading
-    import time
-    
     def delayed_startup_notification():
         time.sleep(5)  # Attendre 5 secondes que le serveur soit prêt
         send_startup_notification()
