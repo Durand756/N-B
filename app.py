@@ -34,15 +34,15 @@ ADMIN_IDS = set(id.strip() for id in ADMIN_IDS_RAW.split(",") if id.strip())
 
 # Variables Google Drive séparées pour éviter les problèmes JSON
 DRIVE_TYPE = os.getenv("DRIVE_TYPE", "service_account")
-DRIVE_PROJECT_ID = os.getenv("DRIVE_PROJECT_ID", "")
-DRIVE_PRIVATE_KEY_ID = os.getenv("DRIVE_PRIVATE_KEY_ID", "")
+DRIVE_PROJECT_ID = "my-bot-whatsapp-462114"
+DRIVE_PRIVATE_KEY_ID = "b666e87c8356d062a04d33fc50694c3c776dd6a2"
 DRIVE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDkXG3qYl04SxGN\nrDW7HoIP13upkh6DVQN2B0Bl4bU+zseYzWWB0PG269T2xT4WucRZmFol5DbZYlwG\nWLhh2gqgLC+o6DO66onOw5ZWXD8oV8dToKOwIkDbiHAA2V4QrOwXRUJYro8j8dkl\nCOC0U6OYxOyT7tUNYJyohgVnrxvw05ojsf9Ujr/Y04WBc9u2TzGtBk8Njw30SAP7\nVg7mjAypLO7Pza9Qni+VQww+dPyH7suegLFFAJym+wDkMoMSb+hv1P+xfP452usK\n60mAoavK67duZWFpIsU7m2aY06vHaYcLSThP4eksdTorTBiswILnbtsb5Oe23qyC\nB/6hE1u1AgMBAAECggEACoJDZPoeV+5tHMksQX5uVfwgsCVt2zWGFCrSGJjUs6gl\n5h8A+Rf3C6faKXoFuQYsUO2H1n8O/sgokSUzj6iOUnUow1Ezkjo5Wccalmz702eI\ntXfqwyVXDpM+iOzNMp9r5PKWZ/OD2aUHTQ2VyPlMCcYkLKGcyIG7QS5xC2ay9o0x\nXE5rBMGaN0hCM/qYlGpWv5pXHMptkFqbXrn2lj57GKmzhoBaALjP5msLMFNX09kt\nrD9n9EENkfakJyKqLPvk/Slr8i6dNLutLVmN+Gs/GzBsaUu8dj9kdvkgTfR2H2oH\nWYRJqAEskGKoDGSv/gsyv/OADfepIXZPMHVn/7+heQKBgQD/8uGkPKu1fyI5GWBg\n/JzrrCBZZOujFs6kL1KCf0IyKQ6JmZq+GFEGJQ78gMQN5gA9aCp1w7Oi76gaZC0h\n8coO9dY23oGa7Hys9kIdI+EsmYwJSuL90Xwk4qqYBW8PKsI3EOT5Vz1X+XH/7937\nJmgGlHWsZ4daHvZ+aFmnBTQPTQKBgQDkaCJKM3E+NaI0Zl4AbeN93lfnX4W6Uel4\nsijw7DWhKfj9CTixVtjBdyPnRuxJqQ3wb2n4yaCg3tqyOysIsfRY7G6jDnrXlWpc\nLwLwKxrzoSXhau7Tje4UbeKHtKpxUWnFZUwPlO1Dfa1A8qTo8P30SVUC3YBTWJ4d\nKFYhlPUaCQKBgFmlDhbiERoOn0P0eWc+0w9QSDxHNqj2kgW7dWCzhdHfw3G6VRKD\nnc1TKX6S8xgTGL5pP4Xjt4U3/17O+2fKMgUvYYnyQN6sObaywdFHAdUHKp8OlZZk\nyuB4a1u3e4CKb1+uESSrw5aOjbkgoFUYzJKRaO2rjSKpeZgooE35apR5AoGAEC9g\n3qkuiR371IK8foNK74xl5jtamo1bYfYd+JSEaFs1DZktr0NcMLlkjer0q3OTTUpX\n1A1VmJCyJpcSwZb6naKDZIKOKeConMeoCaTEUCdHK+YL7mnMSR5QQxWGTmlaeWZo\nMWJ4PaQWNtf635bUKA9aOs2/XiiVa7OEBvUrOSECgYEA7y3Ef5kaBLJ6mKTkS/ne\n67aC7lPLXkSc/NRLYG5QsfiTrEHR+S35FKSMQy0WzwrMoG+SBEegTjVRPqDo+bjE\nhTYWwTWx/AuLeMCuczrsaeSG8AMU9wqd/ZEmGk0o2YF0o2QDPIt/2tWG6ro2H8D9\ngidZ8AJ/F+mAN0nVPHkIazU=\n-----END PRIVATE KEY-----\n"
-DRIVE_CLIENT_EMAIL = os.getenv("DRIVE_CLIENT_EMAIL", "")
-DRIVE_CLIENT_ID = os.getenv("DRIVE_CLIENT_ID", "")
-DRIVE_AUTH_URI = os.getenv("DRIVE_AUTH_URI", "")
-DRIVE_TOKEN_URI = os.getenv("DRIVE_TOKEN_URI", "")
-DRIVE_CLIENT_CERT_URL = os.getenv("DRIVE_CLIENT_CERT_URL", "")
-DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
+DRIVE_CLIENT_EMAIL = "nakamabot@my-bot-whatsapp-462114.iam.gserviceaccount.com"
+DRIVE_CLIENT_ID = "100203402694615278880"
+DRIVE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
+DRIVE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+DRIVE_CLIENT_CERT_URL = "https://www.googleapis.com/robot/v1/metadata/x509/nakamabot%40my-bot-whatsapp-462114.iam.gserviceaccount.com"
+DRIVE_FOLDER_ID = "1tvdi_D5j35Xl0vS7VdADk1dMnkzMHB_k"
 
 # 💾 SYSTÈME DE MÉMOIRE
 user_memory = defaultdict(lambda: deque(maxlen=10))
