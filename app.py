@@ -19,21 +19,22 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-JSONBIN_API_KEY = os.getenv("JSONBIN_API_KEY", "")
-JSONBIN_BIN_ID = os.getenv("JSONBIN_BIN_ID", "")  # Optionnel
+JSONBIN_API_KEY = "$2a$10$XUdDdy6MCxieCkCAWObx4ePMOlywZwUomubwIamPKO3QJ1aJyY8dO"
+JSONBIN_BIN_ID = os.getenv("JSONBIN_BIN_ID", "")
 ADMIN_IDS = set(id.strip() for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip())
 
 # Mémoire et état du jeu
 user_memory = defaultdict(lambda: deque(maxlen=10))
 user_list = set()
-game_sessions = {}  # Pour le jeu Action ou Vérité
+game_sessions = {}
 
-# Variable globale pour éviter les sauvegardes concurrentes
+# Variables globales pour le stockage
 _saving_lock = threading.Lock()
 _last_save_time = 0
+_save_needed = False
 
 class JSONBinStorage:
-    """Classe pour gérer le stockage JSONBin.io"""
+    """Classe pour gérer le stockage JSONBin.io avec corrections"""
     
     def __init__(self, api_key, bin_id=None):
         self.api_key = api_key
@@ -43,6 +44,7 @@ class JSONBinStorage:
             "Content-Type": "application/json",
             "X-Master-Key": api_key
         }
+        logger.info(f"🔧 JSONBin initialisé avec bin_id: {bin_id}")
     
     def create_bin(self, initial_data=None):
         """Créer un nouveau bin JSONBin"""
@@ -56,15 +58,16 @@ class JSONBinStorage:
         }
         
         try:
-            # Ajouter le header pour créer un bin privé
             headers = self.headers.copy()
             headers["X-Bin-Private"] = "true"
+            headers["X-Bin-Name"] = "NakamaBot-Data"
             
+            logger.info("📦 Création d'un nouveau bin JSONBin...")
             response = requests.post(
                 f"{self.base_url}/b",
                 headers=headers,
                 json=data,
-                timeout=15
+                timeout=20
             )
             
             logger.info(f"🔍 Réponse création bin: {response.status_code}")
@@ -73,229 +76,196 @@ class JSONBinStorage:
                 result = response.json()
                 self.bin_id = result['metadata']['id']
                 logger.info(f"✅ Nouveau bin JSONBin créé: {self.bin_id}")
-                logger.info(f"🔑 Ajoutez cette variable d'environnement: JSONBIN_BIN_ID={self.bin_id}")
+                logger.info(f"🔑 IMPORTANT: Ajoutez cette variable d'environnement: JSONBIN_BIN_ID={self.bin_id}")
                 return True
             else:
                 logger.error(f"❌ Erreur création bin: {response.status_code}")
                 logger.error(f"Réponse: {response.text}")
                 return False
                 
-        except requests.RequestException as e:
-            logger.error(f"❌ Erreur réseau création bin: {e}")
-            return False
         except Exception as e:
-            logger.error(f"❌ Erreur générale création bin: {e}")
+            logger.error(f"❌ Erreur création bin: {e}")
             return False
     
     def save_data(self, data):
-        """Sauvegarder les données sur JSONBin avec retry"""
+        """Sauvegarder avec gestion d'erreurs améliorée"""
         if not self.bin_id:
             logger.warning("⚠️ Pas de bin_id, création automatique...")
             if not self.create_bin(data):
                 return False
         
-        # Ajouter métadonnées et validation
         try:
-            # Validation des données avant sauvegarde
+            # Préparer les données sérialisables
             serializable_data = self._make_serializable(data)
             
             data_to_save = {
                 **serializable_data,
                 'timestamp': datetime.now().isoformat(),
                 'version': '3.0',
-                'creator': 'Durand',
-                'data_hash': hash(str(serializable_data))  # Pour vérifier l'intégrité
+                'creator': 'Durand'
             }
             
-            # Test de sérialisation JSON
+            # Test de sérialisation
             json.dumps(data_to_save)
+            logger.info("📦 Préparation des données pour sauvegarde...")
             
-        except (TypeError, ValueError) as e:
-            logger.error(f"❌ Erreur sérialisation données: {e}")
+        except Exception as e:
+            logger.error(f"❌ Erreur préparation données: {e}")
             return False
         
-        # Retry logic avec backoff exponentiel
+        # Sauvegarde avec retry
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                logger.info(f"💾 Tentative de sauvegarde {attempt + 1}/{max_retries}...")
+                
                 response = requests.put(
                     f"{self.base_url}/b/{self.bin_id}",
                     headers=self.headers,
                     json=data_to_save,
-                    timeout=20
+                    timeout=25
                 )
                 
-                logger.info(f"🔍 Tentative {attempt + 1}: Status {response.status_code}")
+                logger.info(f"🔍 Status sauvegarde: {response.status_code}")
                 
                 if response.status_code == 200:
-                    logger.info("✅ Données sauvegardées sur JSONBin")
+                    logger.info("✅ Données sauvegardées avec succès sur JSONBin!")
                     return True
                 elif response.status_code == 401:
-                    logger.error("❌ Clé API JSONBin invalide ou expirée")
+                    logger.error("❌ Clé API JSONBin invalide")
                     return False
                 elif response.status_code == 404:
                     logger.warning("⚠️ Bin introuvable, création d'un nouveau...")
-                    self.bin_id = None  # Reset bin_id
-                    return self.save_data(data)  # Récursion pour créer nouveau bin
+                    self.bin_id = None
+                    return self.save_data(data)
                 else:
-                    logger.warning(f"⚠️ Erreur sauvegarde tentative {attempt + 1}: {response.status_code}")
-                    logger.warning(f"Réponse: {response.text[:200]}")
-                    
+                    logger.warning(f"⚠️ Erreur {response.status_code}: {response.text}")
                     if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)  # Backoff exponentiel
+                        wait_time = (attempt + 1) * 3
+                        logger.info(f"⏳ Attente {wait_time}s avant retry...")
+                        time.sleep(wait_time)
                         continue
                         
             except requests.Timeout:
                 logger.warning(f"⏱️ Timeout tentative {attempt + 1}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-            except requests.RequestException as e:
-                logger.warning(f"🌐 Erreur réseau tentative {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep((attempt + 1) * 2)
                     continue
             except Exception as e:
-                logger.error(f"❌ Erreur inattendue sauvegarde: {e}")
+                logger.error(f"❌ Erreur sauvegarde: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep((attempt + 1) * 2)
+                    continue
                 break
         
-        logger.error("❌ Échec sauvegarde après tous les essais")
+        logger.error("❌ Échec de toutes les tentatives de sauvegarde")
         return False
     
     def load_data(self):
-        """Charger les données depuis JSONBin avec retry"""
+        """Charger les données avec validation"""
         if not self.bin_id:
-            logger.warning("⚠️ Pas de bin_id configuré")
+            logger.warning("⚠️ Pas de bin_id pour le chargement")
             return None
         
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                logger.info(f"📥 Tentative de chargement {attempt + 1}/{max_retries}...")
+                
                 response = requests.get(
                     f"{self.base_url}/b/{self.bin_id}/latest",
                     headers=self.headers,
-                    timeout=15
+                    timeout=20
                 )
                 
-                logger.info(f"🔍 Chargement tentative {attempt + 1}: Status {response.status_code}")
+                logger.info(f"🔍 Status chargement: {response.status_code}")
                 
                 if response.status_code == 200:
                     data = response.json()['record']
-                    
-                    # Validation des données chargées
                     if self._validate_data(data):
-                        logger.info(f"✅ Données chargées depuis JSONBin (v{data.get('version', '1.0')})")
+                        logger.info(f"✅ Données chargées (v{data.get('version', '1.0')})")
                         return data
                     else:
-                        logger.warning("⚠️ Données corrompues détectées")
+                        logger.warning("⚠️ Données invalides")
                         return None
                         
                 elif response.status_code == 401:
-                    logger.error("❌ Clé API JSONBin invalide")
+                    logger.error("❌ Clé API invalide")
                     return None
                 elif response.status_code == 404:
-                    logger.error("❌ Bin introuvable, vérifiez JSONBIN_BIN_ID")
+                    logger.error("❌ Bin introuvable")
                     return None
                 else:
-                    logger.warning(f"⚠️ Erreur chargement tentative {attempt + 1}: {response.status_code}")
+                    logger.warning(f"⚠️ Erreur {response.status_code}")
                     if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)
+                        time.sleep((attempt + 1) * 2)
                         continue
                         
-            except requests.Timeout:
-                logger.warning(f"⏱️ Timeout chargement tentative {attempt + 1}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-            except requests.RequestException as e:
-                logger.warning(f"🌐 Erreur réseau chargement tentative {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
             except Exception as e:
-                logger.error(f"❌ Erreur inattendue chargement: {e}")
+                logger.warning(f"❌ Erreur chargement: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep((attempt + 1) * 2)
+                    continue
                 break
         
         logger.error("❌ Échec chargement après tous les essais")
         return None
     
     def _make_serializable(self, data):
-        """Convertir les données en format sérialisable JSON"""
+        """Convertir en format JSON sérialisable"""
         serializable = {}
         
-        # Convertir user_memory (deque -> list)
+        # Convertir user_memory
         if 'user_memory' in data:
             serializable['user_memory'] = {}
             for user_id, messages in data['user_memory'].items():
-                serializable['user_memory'][str(user_id)] = list(messages)
+                if hasattr(messages, '__iter__'):
+                    serializable['user_memory'][str(user_id)] = list(messages)
+                else:
+                    serializable['user_memory'][str(user_id)] = []
         
-        # Convertir user_list (set -> list)
+        # Convertir user_list
         if 'user_list' in data:
-            serializable['user_list'] = list(data['user_list'])
+            if hasattr(data['user_list'], '__iter__'):
+                serializable['user_list'] = list(data['user_list'])
+            else:
+                serializable['user_list'] = []
         
-        # game_sessions devrait déjà être sérialisable
+        # Copier game_sessions
         if 'game_sessions' in data:
-            serializable['game_sessions'] = data['game_sessions']
+            serializable['game_sessions'] = dict(data['game_sessions'])
         
         return serializable
     
     def _validate_data(self, data):
-        """Valider la structure des données chargées"""
+        """Valider la structure des données"""
         if not isinstance(data, dict):
+            logger.warning("❌ Données ne sont pas un dictionnaire")
             return False
         
-        # Vérifications de base
         required_fields = ['user_memory', 'user_list', 'game_sessions']
         for field in required_fields:
             if field not in data:
-                logger.warning(f"⚠️ Champ manquant: {field}")
+                logger.warning(f"❌ Champ manquant: {field}")
                 return False
         
-        # Vérifier les types
-        if not isinstance(data['user_memory'], dict):
-            return False
-        if not isinstance(data['user_list'], list):
-            return False
-        if not isinstance(data['game_sessions'], dict):
-            return False
-        
         return True
-    
-    def get_bin_info(self):
-        """Obtenir les infos du bin"""
-        if not self.bin_id:
-            return None
-        
-        try:
-            response = requests.get(
-                f"{self.base_url}/b/{self.bin_id}",
-                headers=self.headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                return response.json()['metadata']
-            return None
-        except Exception as e:
-            logger.error(f"Erreur récupération info bin: {e}")
-            return None
 
-# Initialiser le stockage JSONBin
+# Initialiser le stockage
 storage = None
 
 def init_jsonbin_storage():
-    """Initialiser le stockage JSONBin avec validation"""
+    """Initialiser JSONBin avec validation complète"""
     global storage
     
     if not JSONBIN_API_KEY:
-        logger.error("❌ JSONBIN_API_KEY manquante dans les variables d'environnement")
-        logger.error("🔧 Ajoutez: JSONBIN_API_KEY=votre_cle_api")
+        logger.error("❌ JSONBIN_API_KEY manquante!")
         return False
     
     try:
         storage = JSONBinStorage(JSONBIN_API_KEY, JSONBIN_BIN_ID)
         
-        # Test de la clé API avec un appel simple
+        # Test simple de la clé API
         test_headers = {"X-Master-Key": JSONBIN_API_KEY}
         test_response = requests.get(
             "https://api.jsonbin.io/v3/b",
@@ -304,50 +274,56 @@ def init_jsonbin_storage():
         )
         
         if test_response.status_code == 401:
-            logger.error("❌ Clé API JSONBin invalide")
+            logger.error("❌ Clé API JSONBin invalide!")
             return False
         
-        # Tester la connexion si bin_id existe
+        logger.info("✅ Clé API JSONBin validée")
+        
+        # Si bin_id existe, tester le chargement
         if JSONBIN_BIN_ID:
             logger.info(f"🔍 Test du bin existant: {JSONBIN_BIN_ID}")
             test_data = storage.load_data()
             if test_data is not None:
-                logger.info("✅ JSONBin connecté avec succès au bin existant")
+                logger.info("✅ JSONBin connecté au bin existant")
                 return True
             else:
-                logger.warning("⚠️ Bin ID invalide ou inaccessible, création d'un nouveau bin...")
+                logger.warning("⚠️ Bin inaccessible, création d'un nouveau...")
         
-        # Créer un nouveau bin si nécessaire
-        logger.info("🆕 Création d'un nouveau bin JSONBin...")
+        # Créer un nouveau bin
+        logger.info("🆕 Création d'un nouveau bin...")
         if storage.create_bin():
             logger.info("✅ JSONBin initialisé avec succès")
             return True
         else:
-            logger.error("❌ Impossible d'initialiser JSONBin")
+            logger.error("❌ Impossible de créer un bin")
             return False
             
     except Exception as e:
         logger.error(f"❌ Erreur initialisation JSONBin: {e}")
         return False
 
-def save_to_storage():
-    """Sauvegarde vers JSONBin avec protection contre les appels concurrents"""
-    global _last_save_time
+def save_to_storage(force=False):
+    """Sauvegarde avec flag de force et meilleure gestion"""
+    global _last_save_time, _save_needed
     
     if not storage:
-        logger.warning("⚠️ Stockage JSONBin non initialisé")
+        logger.warning("⚠️ Stockage non initialisé")
         return False
     
-    # Éviter les sauvegardes trop fréquentes (throttling)
     current_time = time.time()
-    if current_time - _last_save_time < 5:  # Minimum 5 secondes entre sauvegardes
-        logger.debug("🔄 Sauvegarde ignorée (throttling)")
+    
+    # Throttling (sauf si forcé)
+    if not force and current_time - _last_save_time < 10:
+        logger.debug("🔄 Sauvegarde throttled")
+        _save_needed = True  # Marquer qu'une sauvegarde est nécessaire
         return True
     
     with _saving_lock:
         try:
+            logger.info("💾 Démarrage de la sauvegarde...")
+            
             data = {
-                'user_memory': dict(user_memory),  # Convertir defaultdict en dict
+                'user_memory': dict(user_memory),
                 'user_list': user_list,
                 'game_sessions': game_sessions
             }
@@ -355,6 +331,11 @@ def save_to_storage():
             success = storage.save_data(data)
             if success:
                 _last_save_time = current_time
+                _save_needed = False
+                logger.info("✅ Sauvegarde réussie!")
+            else:
+                logger.error("❌ Échec de la sauvegarde")
+            
             return success
             
         except Exception as e:
@@ -362,42 +343,46 @@ def save_to_storage():
             return False
 
 def load_from_storage():
-    """Chargement depuis JSONBin avec validation"""
+    """Chargement avec reconstruction des structures"""
     global user_memory, user_list, game_sessions
     
     if not storage:
-        logger.warning("⚠️ Stockage JSONBin non initialisé")
+        logger.warning("⚠️ Stockage non initialisé")
         return False
     
     try:
+        logger.info("📥 Chargement des données...")
         data = storage.load_data()
         if not data:
             logger.info("📁 Aucune donnée à charger")
             return False
         
-        # Restaurer les données avec vérifications robustes
+        # Reconstruire user_memory
         user_memory.clear()
         loaded_memory = data.get('user_memory', {})
         for user_id, messages in loaded_memory.items():
             if isinstance(messages, list):
-                # Valider chaque message
                 valid_messages = []
                 for msg in messages:
                     if isinstance(msg, dict) and 'type' in msg and 'content' in msg:
                         valid_messages.append(msg)
-                user_memory[user_id] = deque(valid_messages, maxlen=10)
+                user_memory[str(user_id)] = deque(valid_messages, maxlen=10)
         
+        # Reconstruire user_list
         user_list.clear()
         loaded_users = data.get('user_list', [])
         if isinstance(loaded_users, list):
-            user_list.update(str(uid) for uid in loaded_users if uid)  # Convertir en string
+            for uid in loaded_users:
+                if uid:
+                    user_list.add(str(uid))
         
+        # Reconstruire game_sessions
         game_sessions.clear()
         loaded_games = data.get('game_sessions', {})
         if isinstance(loaded_games, dict):
             game_sessions.update(loaded_games)
         
-        logger.info(f"📊 Chargé: {len(user_list)} utilisateurs, {len(user_memory)} conversations, {len(game_sessions)} jeux")
+        logger.info(f"📊 Restauré: {len(user_list)} users, {len(user_memory)} conversations, {len(game_sessions)} jeux")
         return True
         
     except Exception as e:
@@ -405,46 +390,28 @@ def load_from_storage():
         return False
 
 def auto_save():
-    """Sauvegarde automatique améliorée avec gestion d'erreurs"""
-    save_interval = 300  # 5 minutes
-    consecutive_failures = 0
-    max_failures = 3
+    """Système de sauvegarde automatique optimisé"""
+    global _save_needed
     
-    logger.info(f"🔄 Auto-save JSONBin démarré (intervalle: {save_interval}s)")
+    logger.info("🔄 Auto-save démarré")
     
     while True:
         try:
-            time.sleep(save_interval)
+            time.sleep(120)  # Vérifier toutes les 2 minutes
             
-            # Sauvegarder seulement s'il y a des données
-            if user_memory or user_list or game_sessions:
-                success = save_to_storage()
-                
-                if success:
-                    consecutive_failures = 0
-                    logger.info("🔄✅ Auto-save réussi")
-                else:
-                    consecutive_failures += 1
-                    logger.warning(f"🔄❌ Auto-save échoué ({consecutive_failures}/{max_failures})")
+            # Sauvegarder si nécessaire ou périodiquement
+            if _save_needed or time.time() - _last_save_time > 300:  # 5 minutes max
+                if user_memory or user_list or game_sessions:
+                    logger.info("🔄 Déclenchement auto-save...")
+                    save_to_storage(force=True)
                     
-                    # Si trop d'échecs consécutifs, augmenter l'intervalle
-                    if consecutive_failures >= max_failures:
-                        save_interval = min(save_interval * 2, 1800)  # Max 30 minutes
-                        logger.warning(f"⚠️ Intervalle auto-save augmenté à {save_interval}s")
-                        consecutive_failures = 0
-            
-        except KeyboardInterrupt:
-            logger.info("🛑 Auto-save arrêté")
-            break
         except Exception as e:
             logger.error(f"❌ Erreur auto-save: {e}")
-            time.sleep(60)  # Attendre 1 minute avant de retry
+            time.sleep(60)
 
-# API Mistral avec gestion améliorée
 def call_mistral_api(messages, max_tokens=200, temperature=0.8):
-    """Appel API Mistral optimisé avec retry"""
+    """API Mistral avec retry amélioré"""
     if not MISTRAL_API_KEY:
-        logger.warning("⚠️ Clé API Mistral manquante")
         return None
     
     headers = {
@@ -458,8 +425,7 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.8):
         "temperature": temperature
     }
     
-    max_retries = 2
-    for attempt in range(max_retries):
+    for attempt in range(2):
         try:
             response = requests.post(
                 "https://api.mistral.ai/v1/chat/completions", 
@@ -474,35 +440,28 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.8):
                 logger.error("❌ Clé API Mistral invalide")
                 return None
             else:
-                logger.warning(f"⚠️ Erreur API Mistral: {response.status_code}")
-                if attempt < max_retries - 1:
+                if attempt == 0:
                     time.sleep(2)
                     continue
                 return None
                 
-        except requests.Timeout:
-            logger.warning(f"⏱️ Timeout Mistral tentative {attempt + 1}")
-            if attempt < max_retries - 1:
-                time.sleep(2)
-                continue
-        except requests.RequestException as e:
-            logger.warning(f"🌐 Erreur réseau Mistral: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2)
-                continue
         except Exception as e:
-            logger.error(f"❌ Erreur générale Mistral: {e}")
-            break
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            logger.error(f"❌ Erreur Mistral: {e}")
+            return None
     
     return None
 
 def add_to_memory(user_id, msg_type, content):
-    """Ajouter à la mémoire avec sauvegarde async intelligente"""
-    # Valider les paramètres
+    """Ajouter à la mémoire avec déclenchement de sauvegarde"""
+    global _save_needed
+    
     if not user_id or not msg_type or not content:
         return
     
-    # Limiter la taille du contenu
+    # Limiter la taille
     if len(content) > 2000:
         content = content[:1900] + "...[tronqué]"
     
@@ -512,12 +471,15 @@ def add_to_memory(user_id, msg_type, content):
         'timestamp': datetime.now().isoformat()
     })
     
-    # Sauvegarde asynchrone intelligente (pas à chaque message)
-    if storage and random.random() < 0.1:  # 10% de chance de déclencher une sauvegarde
-        threading.Thread(target=save_to_storage, daemon=True).start()
+    # Marquer qu'une sauvegarde est nécessaire
+    _save_needed = True
+    
+    # Déclencher sauvegarde immédiate parfois
+    if random.random() < 0.05:  # 5% de chance
+        threading.Thread(target=lambda: save_to_storage(), daemon=True).start()
 
 def get_memory_context(user_id):
-    """Obtenir le contexte mémoire pour l'IA"""
+    """Obtenir le contexte mémoire"""
     context = []
     for msg in user_memory.get(str(user_id), []):
         role = "user" if msg['type'] == 'user' else "assistant"
@@ -525,25 +487,24 @@ def get_memory_context(user_id):
     return context
 
 def is_admin(user_id):
-    """Vérifier si l'utilisateur est admin"""
+    """Vérifier admin"""
     return str(user_id) in ADMIN_IDS
 
 def broadcast_message(text):
-    """Diffuser un message à tous les utilisateurs"""
+    """Diffusion de messages"""
     if not text or not user_list:
         return {"sent": 0, "total": 0, "errors": 0}
     
     success = 0
     errors = 0
-    for user_id in list(user_list):  # Copie de la liste pour éviter les modifications concurrentes
+    for user_id in list(user_list):
         try:
             result = send_message(user_id, text)
             if result.get("success"):
                 success += 1
             else:
                 errors += 1
-        except Exception as e:
-            logger.error(f"Erreur broadcast vers {user_id}: {e}")
+        except Exception:
             errors += 1
             
     return {"sent": success, "total": len(user_list), "errors": errors}
@@ -563,7 +524,7 @@ def cmd_actionverite(sender_id, args=""):
 ⚡ Prêt pour l'aventure nakama? ✨"""
     
     action = args.strip().lower()
-    sender_id = str(sender_id)  # Assurer que c'est une string
+    sender_id = str(sender_id)
     
     if action == "start":
         game_sessions[sender_id] = {
@@ -698,7 +659,6 @@ def cmd_memory(sender_id, args=""):
         text += f"{emoji} {i}. {preview}\n"
     
     text += f"\n💭 {len(user_memory[sender_id])}/10 messages"
-    text += f"\n🌐 JSONBin: {'✅' if storage else '❌'}"
     
     # Ajouter info jeu si actif
     if sender_id in game_sessions:
@@ -724,22 +684,19 @@ def cmd_admin(sender_id, args=""):
         return f"🔐 Accès refusé! ID: {sender_id}"
     
     if not args.strip():
-        bin_info = storage.get_bin_info() if storage else None
         return f"""🔐 PANNEAU ADMIN v3.0
 • /admin stats - Statistiques
 • /admin save - Force sauvegarde
 • /admin load - Recharge données
 • /admin games - Stats jeux
-• /admin jsonbin - Info JSONBin
 • /admin test - Test connexions
 • /broadcast [msg] - Diffusion
 
 📊 ÉTAT:
-JSONBin: {'✅' if storage else '❌'}
-Bin ID: {storage.bin_id if storage else 'Non configuré'}
 Utilisateurs: {len(user_list)}
 Mémoire: {len(user_memory)}
-Jeux actifs: {len(game_sessions)}"""
+Jeux actifs: {len(game_sessions)}
+Stockage: {'✅' if storage else '❌'}"""
     
     action = args.strip().lower()
     
@@ -748,18 +705,18 @@ Jeux actifs: {len(game_sessions)}"""
 👥 Utilisateurs: {len(user_list)}
 💾 Conversations: {len(user_memory)}
 🎲 Jeux actifs: {len(game_sessions)}
-🌐 JSONBin: {'✅' if storage else '❌'}
+🌐 Stockage: {'✅' if storage else '❌'}
 🔐 Admin ID: {sender_id}
 👨‍💻 Créateur: Durand
-📝 Version: 3.0 (JSONBin)"""
+📝 Version: 3.0"""
     
     elif action == "save":
-        success = save_to_storage()
-        return f"{'✅ Sauvegarde JSONBin réussie!' if success else '❌ Échec sauvegarde JSONBin!'}"
+        success = save_to_storage(force=True)
+        return f"{'✅ Sauvegarde réussie!' if success else '❌ Échec sauvegarde!'}"
     
     elif action == "load":
         success = load_from_storage()
-        return f"{'✅ Chargement JSONBin réussi!' if success else '❌ Échec chargement JSONBin!'}"
+        return f"{'✅ Chargement réussi!' if success else '❌ Échec chargement!'}"
     
     elif action == "games":
         if not game_sessions:
@@ -771,36 +728,22 @@ Jeux actifs: {len(game_sessions)}"""
             text += f"👤 {user_id}: {score} pts\n"
         return text
     
-    elif action == "jsonbin":
-        if not storage:
-            return "❌ JSONBin non initialisé!"
-        
-        bin_info = storage.get_bin_info()
-        if bin_info:
-            return f"""🌐 INFO JSONBIN:
-📦 Bin ID: {storage.bin_id}
-📅 Créé: {bin_info.get('createdAt', 'N/A')}
-🔄 Modifié: {bin_info.get('updatedAt', 'N/A')}
-👤 Privé: {'✅' if bin_info.get('private', True) else '❌'}"""
-        else:
-            return "❌ Impossible de récupérer les infos du bin"
-    
     elif action == "test":
         results = []
         
-        # Test JSONBin
+        # Test stockage
         if storage:
             test_data = storage.load_data()
-            results.append(f"JSONBin: {'✅' if test_data is not None else '❌'}")
+            results.append(f"Stockage: {'✅' if test_data is not None else '❌'}")
         else:
-            results.append("JSONBin: ❌ Non initialisé")
+            results.append("Stockage: ❌ Non initialisé")
         
         # Test Mistral
         if MISTRAL_API_KEY:
             test_response = call_mistral_api([{"role": "user", "content": "Test"}], max_tokens=10)
-            results.append(f"Mistral: {'✅' if test_response else '❌'}")
+            results.append(f"IA: {'✅' if test_response else '❌'}")
         else:
-            results.append("Mistral: ❌ Pas de clé")
+            results.append("IA: ❌ Pas de clé")
         
         # Test Facebook
         results.append(f"Facebook: {'✅' if PAGE_ACCESS_TOKEN else '❌'}")
@@ -810,7 +753,7 @@ Jeux actifs: {len(game_sessions)}"""
     return f"❓ Action '{action}' inconnue!"
 
 def cmd_help(sender_id, args=""):
-    """Aide du bot"""
+    """Aide du bot (simplifiée)"""
     commands = {
         "/start": "🌟 Présentation du bot",
         "/ia [message]": "🧠 Chat libre avec IA",
@@ -828,10 +771,8 @@ def cmd_help(sender_id, args=""):
     if is_admin(sender_id):
         text += "\n🔐 ADMIN:\n/admin - Panneau admin\n/broadcast - Diffusion"
     
-    text += f"\n💾 JSONBin: {'✅' if storage else '❌'}"
     text += "\n👨‍💻 Créé par Durand"
-    text += "\n⚡ Powered by Mistral AI!"
-    text += "\n🆕 Nouveau: Stockage JSONBin.io! 💖"
+    text += "\n✨ Ton compagnon otaku kawaii! 💖"
     return text
 
 # Dictionnaire des commandes
@@ -849,7 +790,6 @@ COMMANDS = {
 
 def process_command(sender_id, message_text):
     """Traiter les commandes utilisateur avec validation"""
-    # Convertir sender_id en string pour cohérence
     sender_id = str(sender_id)
     
     if not message_text or not isinstance(message_text, str):
@@ -906,9 +846,6 @@ def send_message(recipient_id, text):
             logger.error(f"❌ Erreur Facebook API: {response.status_code} - {response.text}")
             return {"success": False, "error": f"API Error {response.status_code}"}
             
-    except requests.Timeout:
-        logger.error("⏱️ Timeout envoi message Facebook")
-        return {"success": False, "error": "Timeout"}
     except Exception as e:
         logger.error(f"❌ Erreur envoi message: {e}")
         return {"success": False, "error": str(e)}
@@ -918,18 +855,14 @@ def send_message(recipient_id, text):
 @app.route("/", methods=['GET'])
 def home():
     """Route d'accueil avec informations détaillées"""
-    bin_info = storage.get_bin_info() if storage else None
-    
     return jsonify({
         "status": "🎌 NakamaBot v3.0 Online! ⚡",
         "creator": "Durand",
-        "storage": "JSONBin.io",
         "commands": len(COMMANDS),
         "users": len(user_list),
         "conversations": len(user_memory),
         "active_games": len(game_sessions),
-        "jsonbin_connected": bool(storage and storage.bin_id),
-        "bin_id": storage.bin_id if storage else None,
+        "storage_connected": bool(storage and storage.bin_id),
         "admins": len(ADMIN_IDS),
         "version": "3.0",
         "last_update": datetime.now().isoformat(),
@@ -950,7 +883,7 @@ def webhook():
             logger.info("✅ Webhook vérifié avec succès")
             return challenge, 200
         else:
-            logger.warning(f"❌ Échec vérification webhook - Mode: {mode}, Token match: {token == VERIFY_TOKEN}")
+            logger.warning(f"❌ Échec vérification webhook")
             return "Verification failed", 403
         
     elif request.method == 'POST':
@@ -967,21 +900,19 @@ def webhook():
                     sender_id = event.get('sender', {}).get('id')
                     
                     if not sender_id:
-                        logger.warning("⚠️ Message sans sender_id")
                         continue
                     
-                    # Convertir sender_id en string
                     sender_id = str(sender_id)
                     
-                    # Ignorer les messages echo du bot
+                    # Traiter les messages non-echo
                     if 'message' in event and not event['message'].get('is_echo'):
-                        # Ajouter l'utilisateur à la liste
+                        # Ajouter l'utilisateur
                         user_list.add(sender_id)
                         
-                        # Récupérer le texte du message
+                        # Récupérer le texte
                         message_text = event['message'].get('text', '').strip()
                         
-                        if message_text:  # Ignorer les messages vides
+                        if message_text:
                             logger.info(f"📨 Message de {sender_id}: {message_text[:50]}...")
                             
                             # Ajouter à la mémoire
@@ -1000,18 +931,8 @@ def webhook():
                                 if send_result.get("success"):
                                     logger.info(f"✅ Réponse envoyée à {sender_id}")
                                 else:
-                                    logger.warning(f"❌ Échec envoi message à {sender_id}: {send_result.get('error')}")
-                            else:
-                                logger.warning(f"⚠️ Aucune réponse générée pour {sender_id}")
-                        else:
-                            logger.debug(f"📭 Message vide ignoré de {sender_id}")
-                    else:
-                        # Messages non-texte ou echo
-                        logger.debug(f"📍 Message non-texte de {sender_id}")
-                        
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Erreur JSON webhook: {e}")
-            return jsonify({"error": "Invalid JSON"}), 400
+                                    logger.warning(f"❌ Échec envoi message à {sender_id}")
+                            
         except Exception as e:
             logger.error(f"❌ Erreur webhook: {e}")
             return jsonify({"error": f"Webhook error: {str(e)}"}), 500
@@ -1026,11 +947,9 @@ def stats():
         "conversations_count": len(user_memory),
         "active_games": len(game_sessions),
         "commands_available": len(COMMANDS),
-        "storage_type": "JSONBin.io",
         "storage_connected": bool(storage and storage.bin_id),
         "version": "3.0",
         "creator": "Durand",
-        "uptime": "N/A",  # Pourrait être calculé si nécessaire
         "last_save": _last_save_time if _last_save_time else "Never"
     })
 
@@ -1040,8 +959,8 @@ def health():
     health_status = {
         "status": "healthy",
         "services": {
-            "jsonbin": bool(storage and storage.bin_id),
-            "mistral": bool(MISTRAL_API_KEY),
+            "storage": bool(storage and storage.bin_id),
+            "ai": bool(MISTRAL_API_KEY),
             "facebook": bool(PAGE_ACCESS_TOKEN)
         },
         "data": {
@@ -1052,12 +971,12 @@ def health():
         "timestamp": datetime.now().isoformat()
     }
     
-    # Vérifier la santé des services
+    # Vérifier la santé
     issues = []
     if not storage or not storage.bin_id:
-        issues.append("JSONBin non connecté")
+        issues.append("Stockage non connecté")
     if not MISTRAL_API_KEY:
-        issues.append("Clé Mistral manquante")
+        issues.append("Clé IA manquante")
     if not PAGE_ACCESS_TOKEN:
         issues.append("Token Facebook manquant")
     
@@ -1070,9 +989,9 @@ def health():
 
 @app.route("/force-save", methods=['POST'])
 def force_save():
-    """Route pour forcer une sauvegarde (utile pour debugging)"""
+    """Route pour forcer une sauvegarde"""
     if request.method == 'POST':
-        success = save_to_storage()
+        success = save_to_storage(force=True)
         return jsonify({
             "success": success,
             "message": "Sauvegarde forcée réussie" if success else "Échec sauvegarde forcée",
@@ -1084,10 +1003,10 @@ def force_save():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage NakamaBot v3.0 avec JSONBin.io...")
+    logger.info("🚀 Démarrage NakamaBot v3.0...")
     logger.info("👨‍💻 Créé par Durand")
     
-    # Vérifier les variables d'environnement critiques
+    # Vérifier les variables d'environnement
     missing_vars = []
     if not PAGE_ACCESS_TOKEN:
         missing_vars.append("PAGE_ACCESS_TOKEN")
@@ -1097,47 +1016,38 @@ if __name__ == "__main__":
         missing_vars.append("JSONBIN_API_KEY")
     
     if missing_vars:
-        logger.error(f"❌ Variables d'environnement manquantes: {', '.join(missing_vars)}")
-        logger.error("🔧 Le bot ne fonctionnera pas correctement sans ces variables!")
-        logger.error("💡 Ajoutez-les dans votre configuration d'hébergement")
+        logger.error(f"❌ Variables manquantes: {', '.join(missing_vars)}")
+        logger.error("🔧 Le bot ne fonctionnera pas correctement!")
     else:
-        logger.info("✅ Toutes les variables d'environnement critiques sont présentes")
+        logger.info("✅ Toutes les variables d'environnement sont présentes")
     
-    # Initialiser JSONBin
-    logger.info("🔄 Initialisation du stockage JSONBin...")
+    # Initialiser le stockage
+    logger.info("🔄 Initialisation du stockage...")
     if init_jsonbin_storage():
-        logger.info("📁 Tentative de chargement des données existantes...")
+        logger.info("📁 Chargement des données existantes...")
         if load_from_storage():
-            logger.info("✅ Données restaurées avec succès depuis JSONBin")
+            logger.info("✅ Données restaurées avec succès")
         else:
-            logger.info("ℹ️  Démarrage avec données vides (premier lancement)")
+            logger.info("ℹ️  Démarrage avec données vides")
         
-        # Démarrer la sauvegarde automatique
-        logger.info("🔄 Démarrage du système de sauvegarde automatique...")
+        # Démarrer l'auto-save
+        logger.info("🔄 Démarrage de l'auto-save...")
         threading.Thread(target=auto_save, daemon=True).start()
-        logger.info("💾 Sauvegarde automatique JSONBin activée")
+        logger.info("💾 Auto-save activé")
     else:
-        logger.warning("⚠️  ATTENTION: Fonctionnement sans sauvegarde JSONBin!")
-        logger.warning("🔧 Vérifiez JSONBIN_API_KEY et la connectivité réseau")
+        logger.warning("⚠️  ATTENTION: Fonctionnement sans sauvegarde!")
     
-    # Afficher les informations de configuration
-    logger.info(f"🎌 {len(COMMANDS)} commandes chargées: {', '.join(COMMANDS.keys())}")
+    # Informations de démarrage
+    logger.info(f"🎌 {len(COMMANDS)} commandes chargées")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs configurés")
     
     if storage and storage.bin_id:
-        logger.info(f"📦 Bin JSONBin actif: {storage.bin_id}")
+        logger.info(f"📦 Bin actif: {storage.bin_id}")
     
     logger.info(f"🌐 Serveur Flask démarrant sur le port {port}")
-    logger.info("🎯 Endpoints disponibles:")
-    logger.info("   • GET  / - Informations du bot")
-    logger.info("   • GET  /stats - Statistiques publiques")
-    logger.info("   • GET  /health - Santé du système")
-    logger.info("   • POST /webhook - Webhook Facebook Messenger")
-    logger.info("   • POST /force-save - Sauvegarde forcée")
+    logger.info("🎉 NakamaBot prêt à servir!")
     
-    logger.info("🎉 NakamaBot prêt à servir les nakamas!")
-    
-    # Démarrer l'application Flask
+    # Démarrer Flask
     try:
         app.run(
             host="0.0.0.0", 
@@ -1147,11 +1057,10 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt:
         logger.info("🛑 Arrêt du bot demandé")
-        # Sauvegarde finale avant arrêt
         if storage:
             logger.info("💾 Sauvegarde finale...")
-            save_to_storage()
+            save_to_storage(force=True)
             logger.info("👋 Sayonara nakamas!")
     except Exception as e:
-        logger.error(f"❌ Erreur critique au démarrage: {e}")
+        logger.error(f"❌ Erreur critique: {e}")
         raise
