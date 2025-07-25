@@ -1,33 +1,41 @@
-# 🎌 NakamaBot Otaku Edition - Requirements 🎌
-
-# Core Framework
+# Core Flask dependencies
 Flask==2.3.3
 Werkzeug==2.3.7
 
-# HTTP Requests
+# HTTP requests
 requests==2.31.0
 urllib3==2.0.7
 
-# OpenAI Integration (ESSENTIAL for otaku commands) - Version compatible Python 3.13
-openai==1.51.0
+# OpenAI API client (compatible with Mistral API)
+openai==1.3.7
 
-# HTTP Client compatible (requis pour OpenAI)
-httpx==0.27.0
+# JSON handling (usually built-in but explicit for safety)
+# json is built-in to Python
 
-# JSON & Data Processing
-jsonify>=0.5
+# Threading and datetime (built-in)
+# threading, datetime are built-in
 
-# Environment Variables
+# Logging (built-in)
+# logging is built-in
+
+# Environment variables (built-in)
+# os is built-in
+
+# Additional useful packages for production
+gunicorn==21.2.0
 python-dotenv==1.0.0
 
-# Logging & Debugging
-colorlog==6.7.0
+# For better JSON handling if needed
+simplejson==3.19.2
 
-# Optional: Enhanced error handling
-gunicorn==21.2.0
+# Security and CORS (optional but recommended)
+flask-cors==4.0.0
 
-# Security
-cryptography==41.0.7
+# Rate limiting (optional but useful for production)
+flask-limiter==3.5.0
 
-# Date/Time utilities (already in stdlib but explicit version)
-python-dateutil==2.8.2
+# Better error handling
+sentry-sdk[flask]==1.38.0
+
+# Development and debugging (optional)
+python-json-logger==2.0.7
