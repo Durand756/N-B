@@ -16,6 +16,9 @@ google-auth-httplib2==0.1.1
 # JSON and data handling
 simplejson==3.19.2
 
+# Optional: Enhanced error handling
+gunicorn==21.2.0
+
 # Date and time utilities
 python-dateutil==2.8.2
 
