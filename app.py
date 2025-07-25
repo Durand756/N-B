@@ -33,8 +33,15 @@ if not OPENAI_API_KEY:
 else:
     logger.info("✅ OPENAI_API_KEY configuré")
     
-# Initialisation OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+# Initialisation OpenAI avec gestion d'erreur
+client = None
+if OPENAI_API_KEY:
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        logger.info("✅ Client OpenAI initialisé avec succès")
+    except Exception as e:
+        logger.error(f"❌ Erreur initialisation OpenAI: {e}")
+        client = None
 
 # 🎭 Dictionnaire des commandes (auto-généré)
 COMMANDS = {}
