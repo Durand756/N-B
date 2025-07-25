@@ -34,7 +34,7 @@ GOOGLE_DRIVE_CREDENTIALS = os.getenv("GOOGLE_DRIVE_CREDENTIALS", "")  # JSON des
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")  # ID du dossier Drive
 
 # 💾 SYSTÈME DE MÉMOIRE
-user_memory = defaultdict(lambda: deque(maxlen=3))  # Garde les 3 derniers messages par user
+user_memory = defaultdict(lambda: deque(maxlen=10))  # Garde les 10 derniers messages par user
 user_list = set()  # Liste des utilisateurs pour broadcast
 
 # 🌐 Service Google Drive
@@ -324,7 +324,7 @@ def cmd_start(sender_id, message_text=""):
     """Présentation immersive style anime opening"""
     messages = [{
         "role": "system",
-        "content": """Tu es NakamaBot, un bot otaku kawaii et énergique. Crée une présentation épique style anime opening en français, avec :
+        "content": """Tu es NakamaBot, un bot otaku kawaii et énergique. Crée une présentation épique style anime opening en français, sans d'ecrire se que tu fais avec :
         - Beaucoup d'emojis anime/manga
         - Style énergique comme Luffy ou Naruto
         - Présente tes capacités de façon cool
@@ -362,7 +362,7 @@ def cmd_ia(sender_id, message_text=""):
     # Construire les messages avec contexte
     messages = [{
         "role": "system",
-        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Tu as une mémoire persistante des conversations précédentes. Réponds en français avec :
+        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Tu as une mémoire persistante des conversations précédentes. Réponds en français sans d'ecrire se que tu fais avec:
         - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
         - Beaucoup d'emojis anime
         - Références anime/manga naturelles
@@ -400,7 +400,7 @@ def cmd_story(sender_id, message_text=""):
     
     messages = [{
         "role": "system",
-        "content": f"""Tu es un conteur otaku. {'Continue l\'histoire précédente' if has_previous_story else 'Écris une nouvelle histoire'} {theme} avec :
+        "content": f"""Tu es un conteur otaku. {'Continue l\'histoire précédente' if has_previous_story else 'Écris une nouvelle histoire'} {theme} sans d'ecrire se que tu fais avec :
         - Protagoniste attachant
         - Situation intéressante
         - Style anime/manga
@@ -467,7 +467,7 @@ def cmd_waifu(sender_id, message_text=""):
     """Génère une waifu unique"""
     messages = [{
         "role": "system",
-        "content": """Crée une waifu originale avec :
+        "content": """Crée une waifu originale sans d'ecrire se que tu fais avec :
         - Nom japonais mignon
         - Âge (18-25 ans)
         - Personnalité unique (kuudere, tsundere, dandere, etc.)
@@ -492,7 +492,7 @@ def cmd_husbando(sender_id, message_text=""):
     """Génère un husbando unique"""
     messages = [{
         "role": "system", 
-        "content": """Crée un husbando original avec :
+        "content": """Crée un husbando original sans d'ecrire se que tu fais avec :
         - Nom japonais cool
         - Âge (20-28 ans)
         - Type de personnalité (kuudere, stoïque, protecteur, etc.)
@@ -521,7 +521,7 @@ def cmd_animequiz(sender_id, message_text=""):
     
     messages = [{
         "role": "system",
-        "content": """Crée un quiz anime original avec :
+        "content": """Crée un quiz anime original sans d'ecrire se que tu fais avec :
         - Question intéressante sur anime/manga populaire
         - 3 choix multiples A, B, C
         - Difficulté moyenne
@@ -545,7 +545,7 @@ def cmd_otakufact(sender_id, message_text=""):
     """Fun facts otaku"""
     messages = [{
         "role": "system",
-        "content": """Donne un fun fact otaku intéressant sur :
+        "content": """Donne un fun fact otaku intéressant sans d'ecrire se que tu fais sur :
         - Anime, manga, culture japonaise, studios d'animation
         - Fait surprenant et véridique
         - Style enthousiaste avec emojis
@@ -622,7 +622,7 @@ def cmd_mood(sender_id, message_text=""):
     
     messages = [{
         "role": "system",
-        "content": """Analyse l'humeur de l'utilisateur et recommande :
+        "content": """Analyse l'humeur de l'utilisateur sans d'ecrire se que tu fais et recommande  :
         - Identification de l'émotion principale
         - 1-2 anime/manga adaptés à ce mood
         - Phrase de réconfort style anime
