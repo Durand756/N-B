@@ -6,7 +6,6 @@ import inspect
 from flask import Flask, request, jsonify
 import requests
 from datetime import datetime
-from openai import OpenAI
 
 # Configuration du logging
 logging.basicConfig(
@@ -20,7 +19,7 @@ app = Flask(__name__)
 # 🔑 Configuration
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
 # Validation des tokens
 if not PAGE_ACCESS_TOKEN:
@@ -28,20 +27,50 @@ if not PAGE_ACCESS_TOKEN:
 else:
     logger.info(f"✅ PAGE_ACCESS_TOKEN configuré")
 
-if not OPENAI_API_KEY:
-    logger.error("❌ OPENAI_API_KEY is missing!")
+if not MISTRAL_API_KEY:
+    logger.error("❌ MISTRAL_API_KEY is missing!")
 else:
-    logger.info("✅ OPENAI_API_KEY configuré")
+    logger.info("✅ MISTRAL_API_KEY configuré")
+
+# Configuration Mistral API
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+MISTRAL_MODEL = "mistral-medium"  # ou "mistral-small" pour économiser
+
+def call_mistral_api(messages, max_tokens=200, temperature=0.8):
+    """Appel générique à l'API Mistral"""
+    if not MISTRAL_API_KEY:
+        return None
     
-# Initialisation OpenAI avec gestion d'erreur
-client = None
-if OPENAI_API_KEY:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {MISTRAL_API_KEY}"
+    }
+    
+    data = {
+        "model": MISTRAL_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature
+    }
+    
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY)
-        logger.info("✅ Client OpenAI initialisé avec succès")
+        response = requests.post(
+            MISTRAL_API_URL,
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        else:
+            logger.error(f"Erreur Mistral API: {response.status_code} - {response.text}")
+            return None
+            
     except Exception as e:
-        logger.error(f"❌ Erreur initialisation OpenAI: {e}")
-        client = None
+        logger.error(f"Exception Mistral API: {e}")
+        return None
 
 # 🎭 Dictionnaire des commandes (auto-généré)
 COMMANDS = {}
@@ -62,41 +91,29 @@ def command(name, description):
 @command('start', '🌟 Présentation épique du bot en mode anime opening!')
 def cmd_start(sender_id, message_text=""):
     """Présentation immersive style anime opening"""
-    if not client:
-        return "❌ OpenAI non configuré pour cette commande, gomen nasai!"
+    messages = [{
+        "role": "system",
+        "content": """Tu es NakamaBot, un bot otaku kawaii et énergique. Crée une présentation épique style anime opening en français, avec :
+        - Beaucoup d'emojis anime/manga
+        - Style énergique comme Luffy ou Naruto
+        - Présente tes capacités de façon cool
+        - Maximum 300 caractères
+        - Termine par une phrase motivante d'anime"""
+    }, {
+        "role": "user", 
+        "content": "Présente-toi de façon épique !"
+    }]
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """Tu es NakamaBot, un bot otaku kawaii et énergique. Crée une présentation épique style anime opening en français, avec :
-                - Beaucoup d'emojis anime/manga
-                - Style énergique comme Luffy ou Naruto
-                - Présente tes capacités de façon cool
-                - Maximum 300 caractères
-                - Termine par une phrase motivante d'anime"""
-            }, {
-                "role": "user", 
-                "content": "Présente-toi de façon épique !"
-            }],
-            max_tokens=150,
-            temperature=0.9
-        )
-        
-        ai_response = response.choices[0].message.content
+    ai_response = call_mistral_api(messages, max_tokens=150, temperature=0.9)
+    
+    if ai_response:
         return f"🎌 {ai_response}\n\n✨ Tape /help pour découvrir toutes mes techniques secrètes, nakama! ⚡"
-        
-    except Exception as e:
-        logger.error(f"Erreur OpenAI start: {e}")
+    else:
         return "🌟 Konnichiwa, nakama! Je suis NakamaBot! ⚡\n🎯 Ton compagnon otaku ultime pour parler anime, manga et bien plus!\n✨ Tape /help pour mes super pouvoirs! 🚀"
 
 @command('ia', '🧠 Discussion libre avec une IA otaku kawaii')
 def cmd_ia(sender_id, message_text=""):
     """Chat libre avec personnalité otaku"""
-    if not client:
-        return "❌ Mon cerveau otaku n'est pas connecté, gomen!"
-    
     # Si pas de texte, engage la conversation
     if not message_text.strip():
         topics = [
@@ -108,230 +125,230 @@ def cmd_ia(sender_id, message_text=""):
         ]
         return f"💭 {random.choice(topics)} ✨"
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Réponds en français avec :
-                - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
-                - Beaucoup d'emojis anime
-                - Références anime/manga naturelles
-                - Style parfois tsundere ou badass selon le contexte
-                - Maximum 400 caractères"""
-            }, {
-                "role": "user",
-                "content": message_text
-            }],
-            max_tokens=200,
-            temperature=0.8
-        )
-        
-        return f"💖 {response.choices[0].message.content}"
-        
-    except Exception as e:
-        logger.error(f"Erreur OpenAI ia: {e}")
+    messages = [{
+        "role": "system",
+        "content": """Tu es NakamaBot, une IA otaku kawaii et énergique. Réponds en français avec :
+        - Personnalité mélange de Nezuko (mignon), Megumin (dramatique), et Zero Two (taquine)
+        - Beaucoup d'emojis anime
+        - Références anime/manga naturelles
+        - Style parfois tsundere ou badass selon le contexte
+        - Maximum 400 caractères"""
+    }, {
+        "role": "user",
+        "content": message_text
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=200, temperature=0.8)
+    
+    if ai_response:
+        return f"💖 {ai_response}"
+    else:
         return "💭 Mon cerveau otaku bug un peu là... Retry, onegaishimasu! 🥺"
 
 @command('waifu', '👸 Génère ta waifu parfaite avec IA!')
 def cmd_waifu(sender_id, message_text=""):
     """Génère une waifu unique"""
-    if not client:
-        return "❌ Le générateur de waifu est en maintenance!"
+    messages = [{
+        "role": "system",
+        "content": """Crée une waifu originale avec :
+        - Nom japonais mignon
+        - Âge (18-25 ans)
+        - Personnalité unique (kuudere, tsundere, dandere, etc.)
+        - Apparence brève mais marquante
+        - Hobby/talent spécial 
+        - Une phrase qu'elle dirait
+        Format en français, style kawaii, max 350 caractères"""
+    }, {
+        "role": "user",
+        "content": "Crée ma waifu parfaite!"
+    }]
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """Crée une waifu originale avec :
-                - Nom japonais mignon
-                - Âge (18-25 ans)
-                - Personnalité unique (kuudere, tsundere, dandere, etc.)
-                - Apparence brève mais marquante
-                - Hobby/talent spécial 
-                - Une phrase qu'elle dirait
-                Format en français, style kawaii, max 350 caractères"""
-            }, {
-                "role": "user",
-                "content": "Crée ma waifu parfaite!"
-            }],
-            max_tokens=180,
-            temperature=0.9
-        )
-        
-        return f"👸✨ Voici ta waifu générée!\n\n{response.choices[0].message.content}\n\n💕 Elle t'attend, nakama!"
-        
-    except Exception as e:
-        logger.error(f"Erreur waifu: {e}")
+    ai_response = call_mistral_api(messages, max_tokens=180, temperature=0.9)
+    
+    if ai_response:
+        return f"👸✨ Voici ta waifu générée!\n\n{ai_response}\n\n💕 Elle t'attend, nakama!"
+    else:
         return "👸 Akari-chan, 19 ans, tsundere aux cheveux roses! Elle adore la pâtisserie mais fait semblant de ne pas s'intéresser à toi... 'B-baka! Ce n'est pas comme si j'avais fait ces cookies pour toi!' 💕"
 
 @command('husbando', '🤵 Génère ton husbando de rêve!')
 def cmd_husbando(sender_id, message_text=""):
     """Génère un husbando unique"""
-    if not client:
-        return "❌ Le générateur de husbando fait une pause!"
+    messages = [{
+        "role": "system", 
+        "content": """Crée un husbando original avec :
+        - Nom japonais cool
+        - Âge (20-28 ans)
+        - Type de personnalité (kuudere, stoïque, protecteur, etc.)
+        - Apparence marquante
+        - Métier/talent
+        - Citation caractéristique
+        Format français, style badass/romantique, max 350 caractères"""
+    }, {
+        "role": "user",
+        "content": "Crée mon husbando parfait!"
+    }]
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system", 
-                "content": """Crée un husbando original avec :
-                - Nom japonais cool
-                - Âge (20-28 ans)
-                - Type de personnalité (kuudere, stoïque, protecteur, etc.)
-                - Apparence marquante
-                - Métier/talent
-                - Citation caractéristique
-                Format français, style badass/romantique, max 350 caractères"""
-            }, {
-                "role": "user",
-                "content": "Crée mon husbando parfait!"
-            }],
-            max_tokens=180,
-            temperature=0.9
-        )
-        
-        return f"🤵⚡ Ton husbando t'attend!\n\n{response.choices[0].message.content}\n\n💙 Il ne te décevra jamais!"
-        
-    except Exception as e:
-        logger.error(f"Erreur husbando: {e}")
+    ai_response = call_mistral_api(messages, max_tokens=180, temperature=0.9)
+    
+    if ai_response:
+        return f"🤵⚡ Ton husbando t'attend!\n\n{ai_response}\n\n💙 Il ne te décevra jamais!"
+    else:
         return "🤵 Takeshi, 24 ans, capitaine stoïque aux yeux d'acier! Épéiste légendaire qui cache un cœur tendre. 'Je protégerai toujours ceux qui me sont chers... y compris toi.' ⚔️💙"
 
 @command('animequiz', '🧩 Quiz épique sur les anime!')
 def cmd_animequiz(sender_id, message_text=""):
     """Quiz anime interactif"""
-    if not client:
-        return "❌ Le quiz-sensei n'est pas disponible!"
-    
     # Si c'est une réponse, on la traite (simplifiée pour cet exemple)
     if message_text.strip():
         return f"🎯 Réponse reçue: '{message_text}'\n💡 Nouveau quiz en arrivant! Tape /animequiz ⚡"
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """Crée un quiz anime original avec :
-                - Question intéressante sur anime/manga populaire
-                - 3 choix multiples A, B, C
-                - Difficulté moyenne
-                - Style énergique
-                - Maximum 300 caractères
-                Format: Question + choix A/B/C"""
-            }, {
-                "role": "user",
-                "content": "Crée un quiz anime!"
-            }],
-            max_tokens=150,
-            temperature=0.8
-        )
-        
-        return f"🧩⚡ QUIZ TIME!\n\n{response.choices[0].message.content}\n\n🎯 Réponds-moi, nakama!"
-        
-    except Exception as e:
-        logger.error(f"Erreur quiz: {e}")
+    messages = [{
+        "role": "system",
+        "content": """Crée un quiz anime original avec :
+        - Question intéressante sur anime/manga populaire
+        - 3 choix multiples A, B, C
+        - Difficulté moyenne
+        - Style énergique
+        - Maximum 300 caractères
+        Format: Question + choix A/B/C"""
+    }, {
+        "role": "user",
+        "content": "Crée un quiz anime!"
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=150, temperature=0.8)
+    
+    if ai_response:
+        return f"🧩⚡ QUIZ TIME!\n\n{ai_response}\n\n🎯 Réponds-moi, nakama!"
+    else:
         return "🧩 Dans quel anime trouve-t-on les 'Piliers'?\nA) Attack on Titan\nB) Demon Slayer\nC) Naruto\n\n⚡ À toi de jouer!"
 
 @command('otakufact', '📚 Fun facts otaku ultra intéressants!')
 def cmd_otakufact(sender_id, message_text=""):
     """Fun facts otaku"""
-    if not client:
-        return "❌ La base de données otaku est en maintenance!"
+    messages = [{
+        "role": "system",
+        "content": """Donne un fun fact otaku intéressant sur :
+        - Anime, manga, culture japonaise, studios d'animation
+        - Fait surprenant et véridique
+        - Style enthousiaste avec emojis
+        - Maximum 250 caractères
+        - Commence par 'Saviez-vous que...'"""
+    }, {
+        "role": "user",
+        "content": "Donne-moi un fun fact otaku!"
+    }]
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """Donne un fun fact otaku intéressant sur :
-                - Anime, manga, culture japonaise, studios d'animation
-                - Fait surprenant et véridique
-                - Style enthousiaste avec emojis
-                - Maximum 250 caractères
-                - Commence par 'Saviez-vous que...'"""
-            }, {
-                "role": "user",
-                "content": "Donne-moi un fun fact otaku!"
-            }],
-            max_tokens=120,
-            temperature=0.7
-        )
-        
-        return f"📚✨ OTAKU FACT!\n\n{response.choices[0].message.content}\n\n🤓 Incroyable, non?"
-        
-    except Exception as e:
-        logger.error(f"Erreur fact: {e}")
+    ai_response = call_mistral_api(messages, max_tokens=120, temperature=0.7)
+    
+    if ai_response:
+        return f"📚✨ OTAKU FACT!\n\n{ai_response}\n\n🤓 Incroyable, non?"
+    else:
         return "📚 Saviez-vous que Akira Toriyama a créé Dragon Ball en s'inspirant du 'Voyage vers l'Ouest', un classique chinois? Son Goku = Sun Wukong! 🐒⚡"
 
 @command('recommend', '🎬 Recommandations anime/manga personnalisées!')
 def cmd_recommend(sender_id, message_text=""):
     """Recommandations selon genre"""
-    if not client:
-        return "❌ Mon catalogue d'animes fait une pause!"
-    
     genre = message_text.strip() or "aléatoire"
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": f"""Recommande 2-3 anime/manga du genre '{genre}' avec :
-                - Titres populaires ou cachés
-                - Courte description enthousiaste de chacun
-                - Pourquoi c'est génial
-                - Style otaku passionné
-                - Maximum 400 caractères"""
-            }, {
-                "role": "user",
-                "content": f"Recommande-moi des anime {genre}!"
-            }],
-            max_tokens=200,
-            temperature=0.8
-        )
-        
-        return f"🎬✨ RECOMMANDATIONS {genre.upper()}!\n\n{response.choices[0].message.content}\n\n⭐ Bon visionnage, nakama!"
-        
-    except Exception as e:
-        logger.error(f"Erreur recommend: {e}")
+    messages = [{
+        "role": "system",
+        "content": f"""Recommande 2-3 anime/manga du genre '{genre}' avec :
+        - Titres populaires ou cachés
+        - Courte description enthousiaste de chacun
+        - Pourquoi c'est génial
+        - Style otaku passionné
+        - Maximum 400 caractères"""
+    }, {
+        "role": "user",
+        "content": f"Recommande-moi des anime {genre}!"
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=200, temperature=0.8)
+    
+    if ai_response:
+        return f"🎬✨ RECOMMANDATIONS {genre.upper()}!\n\n{ai_response}\n\n⭐ Bon visionnage, nakama!"
+    else:
         return f"🎬 Pour {genre}:\n• Attack on Titan - Epic & sombre! ⚔️\n• Your Name - Romance qui fait pleurer 😭\n• One Piece - Aventure infinie! 🏴‍☠️\n\nBon anime time! ✨"
 
 @command('story', '📖 Histoires courtes isekai/shonen sur mesure!')
 def cmd_story(sender_id, message_text=""):
     """Histoires courtes personnalisées"""
-    if not client:
-        return "❌ Mon carnet d'histoires est fermé!"
-    
     theme = message_text.strip() or "isekai"
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": f"""Écris une histoire courte {theme} avec :
-                - Protagoniste attachant
-                - Situation intéressante
-                - Style anime/manga
-                - Fin ouverte ou épique
-                - Maximum 500 caractères
-                - Beaucoup d'action et d'émotion"""
-            }, {
-                "role": "user",
-                "content": f"Raconte-moi une histoire {theme}!"
-            }],
-            max_tokens=250,
-            temperature=0.9
-        )
-        
-        return f"📖⚡ HISTOIRE {theme.upper()}!\n\n{response.choices[0].message.content}\n\n✨ Suite au prochain épisode?"
-        
-    except Exception as e:
-        logger.error(f"Erreur story: {e}")
+    messages = [{
+        "role": "system",
+        "content": f"""Écris une histoire courte {theme} avec :
+        - Protagoniste attachant
+        - Situation intéressante
+        - Style anime/manga
+        - Fin ouverte ou épique
+        - Maximum 500 caractères
+        - Beaucoup d'action et d'émotion"""
+    }, {
+        "role": "user",
+        "content": f"Raconte-moi une histoire {theme}!"
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=250, temperature=0.9)
+    
+    if ai_response:
+        return f"📖⚡ HISTOIRE {theme.upper()}!\n\n{ai_response}\n\n✨ Suite au prochain épisode?"
+    else:
         return "📖 Akira se réveille dans un monde magique où ses connaissances d'otaku deviennent des sorts! Son premier ennemi? Un démon qui déteste les animes! 'Maudit otaku!' crie-t-il. Akira sourit: 'KAMEHAMEHA!' ⚡✨"
+
+@command('translate', '🌐 Traduction otaku FR ↔ JP avec style!')
+def cmd_translate(sender_id, message_text=""):
+    """Traduction avec style otaku"""
+    if not message_text.strip():
+        return "🌐 Utilisation: /translate [texte à traduire]\n💡 Ex: /translate konnichiwa nakama!\n✨ Je traduis FR→JP et JP→FR!"
+    
+    messages = [{
+        "role": "system",
+        "content": """Tu es un traducteur otaku spécialisé. Traduis le texte donné :
+        - Si c'est en français → traduis en japonais (avec romaji)
+        - Si c'est en japonais/romaji → traduis en français
+        - Ajoute le contexte anime/manga si pertinent
+        - Style enthousiaste avec emojis
+        - Maximum 300 caractères"""
+    }, {
+        "role": "user",
+        "content": f"Traduis: {message_text}"
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=150, temperature=0.7)
+    
+    if ai_response:
+        return f"🌐✨ TRADUCTION!\n\n{ai_response}\n\n📝 Arigatou gozaimasu!"
+    else:
+        return f"🌐 Traduction basique:\n'{message_text}'\n\n💭 Désolé, mon dictionnaire otaku fait une pause! 🥺"
+
+@command('mood', '😊 Analyseur d\'humeur otaku + conseils anime!')
+def cmd_mood(sender_id, message_text=""):
+    """Analyse l'humeur et recommande selon le mood"""
+    if not message_text.strip():
+        return "😊 Comment tu te sens aujourd'hui, nakama?\n💡 Ex: /mood je suis triste\n✨ Je vais analyser ton mood et te conseiller!"
+    
+    messages = [{
+        "role": "system",
+        "content": """Analyse l'humeur de l'utilisateur et recommande :
+        - Identification de l'émotion principale
+        - 1-2 anime/manga adaptés à ce mood
+        - Phrase de réconfort style anime
+        - Emojis appropriés
+        - Style empathique et otaku
+        - Maximum 350 caractères"""
+    }, {
+        "role": "user",
+        "content": f"Mon mood: {message_text}"
+    }]
+    
+    ai_response = call_mistral_api(messages, max_tokens=180, temperature=0.8)
+    
+    if ai_response:
+        return f"😊💫 ANALYSE MOOD!\n\n{ai_response}\n\n🤗 Tu n'es pas seul, nakama!"
+    else:
+        return f"😊 Je sens que tu as besoin de réconfort!\n🎬 Regarde 'Your Name' ou 'Spirited Away'\n💝 Tout ira mieux, nakama! Ganbatte!"
 
 @command('help', '❓ Guide complet de toutes mes techniques secrètes!')
 def cmd_help(sender_id, message_text=""):
@@ -343,7 +360,7 @@ def cmd_help(sender_id, message_text=""):
     
     help_text += "\n🔥 Utilisation: Tape / + commande"
     help_text += "\n💡 Ex: /waifu, /ia salut!, /recommend shonen"
-    help_text += "\n\n⚡ Créé avec amour pour les otakus! 💖"
+    help_text += "\n\n⚡ Powered by Mistral AI - Créé avec amour pour les otakus! 💖"
     
     return help_text
 
@@ -355,7 +372,8 @@ def home():
         "status": "🎌 NakamaBot Otaku Edition is alive! ⚡",
         "timestamp": datetime.now().isoformat(),
         "commands_loaded": len(COMMANDS),
-        "ai_ready": bool(client)
+        "ai_ready": bool(MISTRAL_API_KEY),
+        "ai_provider": "Mistral AI"
     })
 
 @app.route("/webhook", methods=['GET', 'POST'])
@@ -487,11 +505,12 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "commands_count": len(COMMANDS),
         "commands_list": list(COMMANDS.keys()),
-        "openai_ready": bool(client),
+        "mistral_ready": bool(MISTRAL_API_KEY),
+        "ai_provider": "Mistral AI",
         "config": {
             "verify_token_set": bool(VERIFY_TOKEN),
             "page_token_set": bool(PAGE_ACCESS_TOKEN),
-            "openai_key_set": bool(OPENAI_API_KEY)
+            "mistral_key_set": bool(MISTRAL_API_KEY)
         }
     }), 200
 
@@ -507,7 +526,8 @@ def list_commands():
     
     return jsonify({
         "total_commands": len(COMMANDS),
-        "commands": commands_info
+        "commands": commands_info,
+        "ai_provider": "Mistral AI"
     })
 
 if __name__ == "__main__":
@@ -516,6 +536,6 @@ if __name__ == "__main__":
     logger.info("🚀 Démarrage NakamaBot Otaku Edition...")
     logger.info(f"🎌 Commandes chargées: {len(COMMANDS)}")
     logger.info(f"📋 Liste: {list(COMMANDS.keys())}")
-    logger.info(f"🤖 OpenAI ready: {bool(client)}")
+    logger.info(f"🤖 Mistral AI ready: {bool(MISTRAL_API_KEY)}")
     
     app.run(host="0.0.0.0", port=port, debug=False)
