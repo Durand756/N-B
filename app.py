@@ -28,52 +28,85 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
-# 🔐 Configuration Admin et Google Drive - CORRECTION
+# 🔐 Configuration Admin et Google Drive - VARIABLES SÉPARÉES
 ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "")
-ADMIN_IDS = set(id.strip() for id in ADMIN_IDS_RAW.split(",") if id.strip())  # Nettoyage des espaces
-GOOGLE_DRIVE_CREDENTIALS = os.getenv("GOOGLE_DRIVE_CREDENTIALS", "")
+ADMIN_IDS = set(id.strip() for id in ADMIN_IDS_RAW.split(",") if id.strip())
+
+# Variables Google Drive séparées pour éviter les problèmes JSON
+DRIVE_TYPE = os.getenv("DRIVE_TYPE", "service_account")
+DRIVE_PROJECT_ID = os.getenv("DRIVE_PROJECT_ID", "")
+DRIVE_PRIVATE_KEY_ID = os.getenv("DRIVE_PRIVATE_KEY_ID", "")
+DRIVE_PRIVATE_KEY = os.getenv("DRIVE_PRIVATE_KEY", "")
+DRIVE_CLIENT_EMAIL = os.getenv("DRIVE_CLIENT_EMAIL", "")
+DRIVE_CLIENT_ID = os.getenv("DRIVE_CLIENT_ID", "")
+DRIVE_AUTH_URI = os.getenv("DRIVE_AUTH_URI", "")
+DRIVE_TOKEN_URI = os.getenv("DRIVE_TOKEN_URI", "")
+DRIVE_CLIENT_CERT_URL = os.getenv("DRIVE_CLIENT_CERT_URL", "")
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
 
 # 💾 SYSTÈME DE MÉMOIRE
-user_memory = defaultdict(lambda: deque(maxlen=10))  # Garde les 10 derniers messages par user
-user_list = set()  # Liste des utilisateurs pour broadcast
+user_memory = defaultdict(lambda: deque(maxlen=10))
+user_list = set()
 
 # 🌐 Service Google Drive
 drive_service = None
 
+def check_drive_config():
+    """Vérifie si toutes les variables Google Drive sont présentes"""
+    required_vars = {
+        'DRIVE_PROJECT_ID': DRIVE_PROJECT_ID,
+        'DRIVE_PRIVATE_KEY': DRIVE_PRIVATE_KEY,
+        'DRIVE_CLIENT_EMAIL': DRIVE_CLIENT_EMAIL,
+        'DRIVE_CLIENT_ID': DRIVE_CLIENT_ID,
+        'DRIVE_FOLDER_ID': DRIVE_FOLDER_ID
+    }
+    
+    missing_vars = []
+    for var_name, var_value in required_vars.items():
+        if not var_value.strip():
+            missing_vars.append(var_name)
+    
+    if missing_vars:
+        logger.error(f"❌ Variables Google Drive manquantes: {missing_vars}")
+        logger.info("💡 Variables requises pour Google Drive:")
+        logger.info("   DRIVE_PROJECT_ID - ID du projet Google Cloud")
+        logger.info("   DRIVE_PRIVATE_KEY - Clé privée (avec \\n pour les retours à la ligne)")
+        logger.info("   DRIVE_CLIENT_EMAIL - Email du service account")
+        logger.info("   DRIVE_CLIENT_ID - ID du client")
+        logger.info("   DRIVE_FOLDER_ID - ID du dossier Drive de destination")
+        return False
+    
+    logger.info("✅ Toutes les variables Google Drive sont présentes")
+    return True
+
 def init_google_drive():
-    """Initialise le service Google Drive - VERSION CORRIGÉE"""
+    """Initialise le service Google Drive avec variables séparées"""
     global drive_service
     
-    if not GOOGLE_DRIVE_CREDENTIALS or not DRIVE_FOLDER_ID:
-        logger.warning("⚠️ Google Drive non configuré - CREDENTIALS ou FOLDER_ID manquant")
-        logger.warning(f"CREDENTIALS présent: {bool(GOOGLE_DRIVE_CREDENTIALS)}")
-        logger.warning(f"FOLDER_ID présent: {bool(DRIVE_FOLDER_ID)}")
+    if not check_drive_config():
+        logger.warning("⚠️ Google Drive non configuré - Variables manquantes")
         return False
     
     try:
-        # Parser les credentials JSON - AMÉLIORATION
-        logger.info("🔄 Parsing des credentials Google Drive...")
+        logger.info("🔄 Initialisation Google Drive avec variables séparées...")
         
-        if GOOGLE_DRIVE_CREDENTIALS.strip().startswith('{'):
-            # JSON directe dans la variable d'environnement
-            credentials_info = json.loads(GOOGLE_DRIVE_CREDENTIALS)
-            logger.info("✅ Credentials JSON chargées depuis variable environnement")
-        else:
-            # Fichier de credentials
-            with open(GOOGLE_DRIVE_CREDENTIALS, 'r') as f:
-                credentials_info = json.load(f)
-            logger.info("✅ Credentials JSON chargées depuis fichier")
+        # Construction des credentials à partir des variables
+        credentials_info = {
+            "type": DRIVE_TYPE,
+            "project_id": DRIVE_PROJECT_ID,
+            "private_key_id": DRIVE_PRIVATE_KEY_ID,
+            "private_key": DRIVE_PRIVATE_KEY.replace('\\n', '\n'),  # Convertir \\n en vrais retours à la ligne
+            "client_email": DRIVE_CLIENT_EMAIL,
+            "client_id": DRIVE_CLIENT_ID,
+            "auth_uri": DRIVE_AUTH_URI or "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": DRIVE_TOKEN_URI or "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": DRIVE_CLIENT_CERT_URL
+        }
         
-        # Vérifier les champs essentiels
-        required_fields = ['type', 'project_id', 'private_key', 'client_email']
-        for field in required_fields:
-            if field not in credentials_info:
-                logger.error(f"❌ Champ manquant dans credentials: {field}")
-                return False
-        
-        logger.info(f"🔍 Project ID: {credentials_info.get('project_id')}")
-        logger.info(f"🔍 Client Email: {credentials_info.get('client_email')}")
+        logger.info(f"🔍 Project ID: {credentials_info['project_id']}")
+        logger.info(f"🔍 Client Email: {credentials_info['client_email']}")
+        logger.info(f"🔍 Folder ID: {DRIVE_FOLDER_ID}")
         
         # Créer les credentials avec les bonnes permissions
         scopes = [
@@ -105,16 +138,21 @@ def init_google_drive():
         logger.info("✅ Google Drive initialisé avec succès")
         return True
         
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Erreur parsing JSON credentials: {e}")
-        return False
     except Exception as e:
         logger.error(f"❌ Erreur initialisation Google Drive: {e}")
         logger.error(f"Type d'erreur: {type(e).__name__}")
+        
+        # Debug des variables pour diagnostiquer
+        logger.debug("🔍 Debug variables Drive:")
+        logger.debug(f"  PROJECT_ID présent: {bool(DRIVE_PROJECT_ID)}")
+        logger.debug(f"  PRIVATE_KEY présent: {bool(DRIVE_PRIVATE_KEY)}")
+        logger.debug(f"  CLIENT_EMAIL présent: {bool(DRIVE_CLIENT_EMAIL)}")
+        logger.debug(f"  FOLDER_ID présent: {bool(DRIVE_FOLDER_ID)}")
+        
         return False
 
 def save_memory_to_drive():
-    """Sauvegarde la mémoire sur Google Drive - VERSION AMÉLIORÉE"""
+    """Sauvegarde la mémoire sur Google Drive"""
     if not drive_service:
         logger.warning("⚠️ Google Drive service non disponible pour sauvegarde")
         return False
@@ -194,7 +232,7 @@ def save_memory_to_drive():
         return False
 
 def load_memory_from_drive():
-    """Charge la mémoire depuis Google Drive - VERSION AMÉLIORÉE"""
+    """Charge la mémoire depuis Google Drive"""
     global user_memory, user_list
     
     if not drive_service:
@@ -249,7 +287,6 @@ def load_memory_from_drive():
         
         for user_id, messages in memory_data.get('user_memory', {}).items():
             if isinstance(messages, list):
-                # Valider chaque message
                 valid_messages = []
                 for msg in messages:
                     if isinstance(msg, dict) and 'type' in msg and 'content' in msg:
@@ -284,7 +321,7 @@ def load_memory_from_drive():
         return False
 
 def auto_save_memory():
-    """Sauvegarde automatique périodique - AMÉLIORÉE"""
+    """Sauvegarde automatique périodique"""
     def save_loop():
         logger.info("🔄 Démarrage thread de sauvegarde automatique")
         while True:
@@ -309,7 +346,7 @@ def auto_save_memory():
     else:
         logger.warning("⚠️ Sauvegarde automatique désactivée - Google Drive non disponible")
 
-# Validation des tokens - AMÉLIORÉE
+# Validation des tokens
 if not PAGE_ACCESS_TOKEN:
     logger.error("❌ PAGE_ACCESS_TOKEN is missing!")
 else:
@@ -320,7 +357,7 @@ if not MISTRAL_API_KEY:
 else:
     logger.info(f"✅ MISTRAL_API_KEY configuré (longueur: {len(MISTRAL_API_KEY)})")
 
-# Validation Admin - CORRECTION MAJEURE
+# Validation Admin
 logger.info(f"🔐 ADMIN_IDS raw: '{ADMIN_IDS_RAW}'")
 logger.info(f"🔐 ADMIN_IDS parsed: {ADMIN_IDS}")
 
@@ -370,7 +407,7 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.8):
         return None
 
 def add_to_memory(user_id, message_type, content):
-    """Ajoute un message à la mémoire de l'utilisateur et sauvegarde - AMÉLIORÉE"""
+    """Ajoute un message à la mémoire de l'utilisateur et sauvegarde"""
     user_memory[user_id].append({
         'type': message_type,
         'content': content,
@@ -404,7 +441,7 @@ def get_memory_context(user_id):
     return context
 
 def is_admin(user_id):
-    """Vérifie si un utilisateur est administrateur - CORRECTION"""
+    """Vérifie si un utilisateur est administrateur"""
     user_id_str = str(user_id).strip()
     is_admin_result = user_id_str in ADMIN_IDS
     logger.debug(f"🔐 Vérification admin pour {user_id_str}: {is_admin_result} (admins: {ADMIN_IDS})")
@@ -507,6 +544,43 @@ def cmd_ia(sender_id, message_text=""):
     else:
         return "💭 Mon cerveau otaku bug un peu là... Retry, onegaishimasu! 🥺"
 
+@command('drive_config', '🔧 [ADMIN] Diagnostic complet de la configuration Google Drive')
+def cmd_drive_config(sender_id, message_text=""):
+    """Diagnostic détaillé de Google Drive pour les admins"""
+    if not is_admin(sender_id):
+        return f"🔐 Accès refusé! Seuls les admins peuvent utiliser cette commande! ❌\n🔍 Ton ID: {sender_id}"
+    
+    config_status = f"""🔧🔐 DIAGNOSTIC GOOGLE DRIVE ADMIN
+
+📋 Variables d'environnement:
+✅ DRIVE_TYPE: {DRIVE_TYPE or '❌ MANQUANT'}
+{'✅' if DRIVE_PROJECT_ID else '❌'} DRIVE_PROJECT_ID: {DRIVE_PROJECT_ID[:20] + '...' if DRIVE_PROJECT_ID else 'MANQUANT'}
+{'✅' if DRIVE_PRIVATE_KEY_ID else '❌'} DRIVE_PRIVATE_KEY_ID: {DRIVE_PRIVATE_KEY_ID[:20] + '...' if DRIVE_PRIVATE_KEY_ID else 'MANQUANT'}
+{'✅' if DRIVE_PRIVATE_KEY else '❌'} DRIVE_PRIVATE_KEY: {'Présente (' + str(len(DRIVE_PRIVATE_KEY)) + ' chars)' if DRIVE_PRIVATE_KEY else 'MANQUANTE'}
+{'✅' if DRIVE_CLIENT_EMAIL else '❌'} DRIVE_CLIENT_EMAIL: {DRIVE_CLIENT_EMAIL or 'MANQUANT'}
+{'✅' if DRIVE_CLIENT_ID else '❌'} DRIVE_CLIENT_ID: {DRIVE_CLIENT_ID or 'MANQUANT'}
+{'✅' if DRIVE_FOLDER_ID else '❌'} DRIVE_FOLDER_ID: {DRIVE_FOLDER_ID or 'MANQUANT'}
+
+🌐 Statut du service:
+{'✅ Connecté' if drive_service else '❌ Non connecté'}
+
+💡 Pour configurer Google Drive:
+1. Créer un projet Google Cloud
+2. Activer l'API Google Drive
+3. Créer un Service Account
+4. Télécharger le fichier JSON des credentials
+5. Extraire chaque champ dans une variable séparée
+
+🔍 Tentative de reconnexion..."""
+    
+    # Tenter une reconnexion
+    if message_text.strip().lower() == "reconnect":
+        success = init_google_drive()
+        config_status += f"\n\n🔄 Résultat reconnexion: {'✅ Succès' if success else '❌ Échec'}"
+    
+    return config_status
+
+# Continuer avec toutes les autres commandes existantes...
 @command('story', '📖 Histoires courtes isekai/shonen sur mesure (avec suite persistante!)')
 def cmd_story(sender_id, message_text=""):
     """Histoires courtes personnalisées avec continuité"""
@@ -516,7 +590,7 @@ def cmd_story(sender_id, message_text=""):
     
     messages = [{
         "role": "system",
-        "content": f"""Tu es un conteur otaku. {'Continue l\'histoire précédente' if has_previous_story else 'Écris une nouvelle histoire'} {theme} SANS décrire tes actions (pas de *actions* ou **descriptions**). Raconte directement avec :
+        "content": f"""Tu es un conteur otaku. {'Continue l\'histoire précédente' if has_previous_story else 'Écis une nouvelle histoire'} {theme} SANS décrire tes actions (pas de *actions* ou **descriptions**). Raconte directement avec :
         - Protagoniste attachant
         - Situation intéressante
         - Style anime/manga
@@ -777,6 +851,7 @@ def cmd_admin(sender_id, message_text=""):
 • /admin save - Force la sauvegarde Drive
 • /admin load - Recharge depuis Drive
 • /admin memory - Stats mémoire globale
+• /drive_config - Diagnostic Google Drive
 • /broadcast [message] - Diffusion générale
 
 🌐 Google Drive: {'✅ Connecté' if drive_service else '❌ Déconnecté'}
@@ -907,7 +982,13 @@ def home():
         "google_drive": bool(drive_service),
         "admin_count": len(ADMIN_IDS),
         "admin_ids": list(ADMIN_IDS),
-        "security": "Admin-secured broadcast"
+        "security": "Admin-secured broadcast",
+        "drive_config": {
+            "project_id_set": bool(DRIVE_PROJECT_ID),
+            "client_email_set": bool(DRIVE_CLIENT_EMAIL),
+            "private_key_set": bool(DRIVE_PRIVATE_KEY),
+            "folder_id_set": bool(DRIVE_FOLDER_ID)
+        }
     })
 
 @app.route("/webhook", methods=['GET', 'POST'])
@@ -1047,7 +1128,9 @@ def health_check():
             "verify_token_set": bool(VERIFY_TOKEN),
             "page_token_set": bool(PAGE_ACCESS_TOKEN),
             "mistral_key_set": bool(MISTRAL_API_KEY),
-            "drive_credentials_set": bool(GOOGLE_DRIVE_CREDENTIALS),
+            "drive_project_id_set": bool(DRIVE_PROJECT_ID),
+            "drive_client_email_set": bool(DRIVE_CLIENT_EMAIL),
+            "drive_private_key_set": bool(DRIVE_PRIVATE_KEY),
             "drive_folder_set": bool(DRIVE_FOLDER_ID),
             "admin_ids_set": bool(ADMIN_IDS)
         }
@@ -1081,7 +1164,7 @@ def startup_broadcast():
     if auth_key != f"Bearer {VERIFY_TOKEN}":
         return jsonify({"error": "Unauthorized"}), 401
     
-    message = "🎌⚡ MISE À JOUR NAKAMA COMPLETED! ⚡🎌\n\n✨ Votre NakamaBot préféré vient d'être upgradé par Durand-sensei!\n\n🆕 Nouvelles fonctionnalités:\n💾 Mémoire persistante (Google Drive)\n🔄 Continuité des histoires permanente\n🔐 Système admin sécurisé\n📢 Broadcast admin seulement\n🚫 Plus de descriptions d'actions\n\n🚀 Prêt pour de nouvelles aventures otaku!\n\n⚡ Tape /help pour découvrir toutes mes nouvelles techniques secrètes, nakama! 💖"
+    message = "🎌⚡ MISE À JOUR NAKAMA COMPLETED! ⚡🎌\n\n✨ Votre NakamaBot préféré vient d'être upgradé par Durand-sensei!\n\n🆕 Nouvelles fonctionnalités:\n💾 Mémoire persistante (Google Drive variables séparées)\n🔄 Continuité des histoires permanente\n🔐 Système admin sécurisé\n📢 Broadcast admin seulement\n🔧 Diagnostic Google Drive amélioré\n\n🚀 Configuration Drive simplifiée avec variables séparées!\n\n⚡ Tape /help pour découvrir toutes mes nouvelles techniques secrètes, nakama! 💖"
     
     result = broadcast_message(message)
     
@@ -1138,16 +1221,87 @@ def admin_control():
             "memory_count": len(user_memory),
             "drive_connected": bool(drive_service),
             "admin_count": len(ADMIN_IDS),
-            "admin_ids": list(ADMIN_IDS)
+            "admin_ids": list(ADMIN_IDS),
+            "drive_config": {
+                "project_id_set": bool(DRIVE_PROJECT_ID),
+                "client_email_set": bool(DRIVE_CLIENT_EMAIL),
+                "private_key_set": bool(DRIVE_PRIVATE_KEY),
+                "folder_id_set": bool(DRIVE_FOLDER_ID)
+            }
+        })
+    
+    elif action == "test_drive":
+        success = init_google_drive()
+        return jsonify({
+            "success": success, 
+            "message": "Drive connection test attempted",
+            "drive_connected": bool(drive_service)
         })
     
     else:
         return jsonify({"error": "Unknown action"}), 400
 
+@app.route("/drive-debug", methods=['GET'])
+def drive_debug():
+    """Route de debug pour Google Drive"""
+    auth_key = request.headers.get('Authorization')
+    if auth_key != f"Bearer {VERIFY_TOKEN}":
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    debug_info = {
+        "drive_service_status": bool(drive_service),
+        "environment_variables": {
+            "DRIVE_TYPE": bool(DRIVE_TYPE),
+            "DRIVE_PROJECT_ID": bool(DRIVE_PROJECT_ID) and DRIVE_PROJECT_ID[:10] + "..." if DRIVE_PROJECT_ID else None,
+            "DRIVE_PRIVATE_KEY_ID": bool(DRIVE_PRIVATE_KEY_ID) and DRIVE_PRIVATE_KEY_ID[:10] + "..." if DRIVE_PRIVATE_KEY_ID else None,
+            "DRIVE_PRIVATE_KEY": bool(DRIVE_PRIVATE_KEY) and f"Present ({len(DRIVE_PRIVATE_KEY)} chars)" if DRIVE_PRIVATE_KEY else "Missing",
+            "DRIVE_CLIENT_EMAIL": DRIVE_CLIENT_EMAIL if DRIVE_CLIENT_EMAIL else "Missing",
+            "DRIVE_CLIENT_ID": bool(DRIVE_CLIENT_ID) and DRIVE_CLIENT_ID[:10] + "..." if DRIVE_CLIENT_ID else None,
+            "DRIVE_FOLDER_ID": DRIVE_FOLDER_ID if DRIVE_FOLDER_ID else "Missing"
+        },
+        "config_check": check_drive_config(),
+        "instructions": {
+            "step_1": "Aller sur Google Cloud Console",
+            "step_2": "Créer un projet ou sélectionner un existant", 
+            "step_3": "Activer l'API Google Drive",
+            "step_4": "Créer un Service Account dans IAM & Admin",
+            "step_5": "Générer une clé JSON pour le Service Account",
+            "step_6": "Extraire chaque champ du JSON vers les variables:",
+            "variables_needed": [
+                "DRIVE_PROJECT_ID (project_id du JSON)",
+                "DRIVE_PRIVATE_KEY_ID (private_key_id du JSON)",
+                "DRIVE_PRIVATE_KEY (private_key du JSON - remplacer \\n par des vrais retours)",
+                "DRIVE_CLIENT_EMAIL (client_email du JSON)",
+                "DRIVE_CLIENT_ID (client_id du JSON)",
+                "DRIVE_FOLDER_ID (ID du dossier Drive de destination)"
+            ],
+            "step_7": "Partager le dossier Drive avec l'email du Service Account",
+            "step_8": "Redémarrer l'application"
+        }
+    }
+    
+    return jsonify(debug_info)
+
 def send_startup_notification():
     """Envoie automatiquement le message de mise à jour au démarrage"""
     if user_list:
-        startup_message = "🎌⚡ SYSTÈME NAKAMA REDÉMARRÉ! ⚡🎌\n\n✨ Durand-sensei vient de mettre à jour mes circuits!\n\n🆕 Nouvelles capacités débloquées:\n💾 Mémoire persistante Google Drive\n🔄 Mode histoire continue permanent\n🔐 Système admin sécurisé\n📢 Broadcast protégé\n🚫 Plus de descriptions d'actions gênantes\n\n🚀 Je suis plus kawaii et naturel que jamais!\n\n⚡ Prêt pour nos prochaines aventures, nakama! 💖"
+        startup_message = f"""🎌⚡ SYSTÈME NAKAMA REDÉMARRÉ! ⚡🎌
+
+✨ Durand-sensei vient de mettre à jour mes circuits!
+
+🆕 Nouvelles capacités débloquées:
+💾 Mémoire persistante Google Drive (variables séparées)
+🔄 Mode histoire continue permanent
+🔐 Système admin sécurisé
+📢 Broadcast protégé
+🔧 Diagnostic Drive amélioré
+🚫 Plus de descriptions d'actions gênantes
+
+🌐 Google Drive: {'✅ Connecté' if drive_service else '❌ Configuration requise'}
+
+🚀 Je suis plus kawaii et naturel que jamais!
+
+⚡ Prêt pour nos prochaines aventures, nakama! 💖"""
         
         result = broadcast_message(startup_message)
         logger.info(f"🚀 Message de démarrage envoyé à {result['sent']}/{result['total']} utilisateurs")
@@ -1156,12 +1310,22 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
     logger.info("🚀 Démarrage NakamaBot Otaku Edition...")
+    logger.info("🔧 Configuration Google Drive avec variables séparées...")
+    
+    # Afficher le statut des variables Drive au démarrage
+    logger.info("📋 Variables Google Drive détectées:")
+    logger.info(f"   DRIVE_PROJECT_ID: {'✅ Présent' if DRIVE_PROJECT_ID else '❌ Manquant'}")
+    logger.info(f"   DRIVE_CLIENT_EMAIL: {'✅ Présent' if DRIVE_CLIENT_EMAIL else '❌ Manquant'}")
+    logger.info(f"   DRIVE_PRIVATE_KEY: {'✅ Présent (' + str(len(DRIVE_PRIVATE_KEY)) + ' chars)' if DRIVE_PRIVATE_KEY else '❌ Manquant'}")
+    logger.info(f"   DRIVE_FOLDER_ID: {'✅ Présent' if DRIVE_FOLDER_ID else '❌ Manquant'}")
     
     # Initialiser Google Drive
     drive_initialized = init_google_drive()
     
-    # Charger la mémoire depuis Drive si possible
     if drive_initialized:
+        logger.info("✅ Google Drive initialisé avec succès!")
+        
+        # Charger la mémoire depuis Drive si possible
         load_success = load_memory_from_drive()
         if load_success:
             logger.info("✅ Mémoire chargée depuis Google Drive")
@@ -1171,6 +1335,12 @@ if __name__ == "__main__":
         auto_save_memory()
     else:
         logger.warning("⚠️ Google Drive non disponible - Mémoire non persistante")
+        logger.info("💡 Pour configurer Google Drive:")
+        logger.info("   1. Créer un projet Google Cloud")
+        logger.info("   2. Activer l'API Google Drive") 
+        logger.info("   3. Créer un Service Account")
+        logger.info("   4. Extraire chaque champ du JSON vers les variables d'environnement")
+        logger.info("   5. Utiliser /drive_config pour diagnostic détaillé")
     
     logger.info(f"🎌 Commandes chargées: {len(COMMANDS)}")
     logger.info(f"📋 Liste: {list(COMMANDS.keys())}")
