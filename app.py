@@ -19,7 +19,7 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-JSONBIN_API_KEY = "$2a$10$XUdDdy6MCxieCkCAWObx4ePMOlywZwUomubwIamPKO3QJ1aJyY8dO"
+JSONBIN_API_KEY = os.getenv("JSONBIN_API_KEY", "")
 JSONBIN_BIN_ID = os.getenv("JSONBIN_BIN_ID", "")
 ADMIN_IDS = set(id.strip() for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip())
 
@@ -255,59 +255,115 @@ class JSONBinStorage:
 storage = None
 
 def init_jsonbin_storage():
-    """Initialiser JSONBin avec validation complète"""
+    """Initialiser JSONBin avec validation complète et diagnostics détaillés"""
     global storage
     
+    logger.info("🔧 Début initialisation JSONBin...")
+    logger.info(f"🔍 JSONBIN_API_KEY présente: {'✅' if JSONBIN_API_KEY else '❌'}")
+    logger.info(f"🔍 JSONBIN_BIN_ID présent: {'✅' if JSONBIN_BIN_ID else '❌'}")
+    
     if not JSONBIN_API_KEY:
-        logger.error("❌ JSONBIN_API_KEY manquante!")
+        logger.error("❌ JSONBIN_API_KEY manquante dans les variables d'environnement!")
+        logger.error("💡 Vérifiez que la variable est bien définie dans votre environnement")
+        storage = None
         return False
     
     try:
+        # Créer l'instance de stockage
+        logger.info("🏗️ Création de l'instance JSONBinStorage...")
         storage = JSONBinStorage(JSONBIN_API_KEY, JSONBIN_BIN_ID)
+        logger.info("✅ Instance JSONBinStorage créée")
         
-        # Test simple de la clé API
+        # Test de connectivité réseau de base
+        logger.info("🌐 Test de connectivité réseau...")
+        try:
+            test_response = requests.get("https://httpbin.org/status/200", timeout=5)
+            logger.info("✅ Connectivité réseau OK")
+        except:
+            logger.warning("⚠️ Problème de connectivité réseau détecté")
+        
+        # Test de la clé API
+        logger.info("🔑 Test de la clé API JSONBin...")
         test_headers = {"X-Master-Key": JSONBIN_API_KEY}
-        test_response = requests.get(
-            "https://api.jsonbin.io/v3/b",
-            headers=test_headers,
-            timeout=10
-        )
         
-        if test_response.status_code == 401:
-            logger.error("❌ Clé API JSONBin invalide!")
-            return False
-        
-        logger.info("✅ Clé API JSONBin validée")
+        try:
+            test_response = requests.get(
+                "https://api.jsonbin.io/v3/b",
+                headers=test_headers,
+                timeout=15
+            )
+            
+            logger.info(f"🔍 Réponse test API: {test_response.status_code}")
+            
+            if test_response.status_code == 401:
+                logger.error("❌ Clé API JSONBin invalide ou expirée!")
+                logger.error("💡 Vérifiez votre clé sur jsonbin.io")
+                storage = None
+                return False
+            elif test_response.status_code == 200:
+                logger.info("✅ Clé API JSONBin validée")
+            else:
+                logger.warning(f"⚠️ Réponse inattendue de l'API: {test_response.status_code}")
+                # Continuer quand même, parfois l'API peut retourner d'autres codes
+                
+        except requests.Timeout:
+            logger.error("❌ Timeout lors du test de la clé API")
+            logger.warning("⚠️ Continuons quand même...")
+        except Exception as e:
+            logger.error(f"❌ Erreur test clé API: {e}")
+            logger.warning("⚠️ Continuons quand même...")
         
         # Si bin_id existe, tester le chargement
-        if JSONBIN_BIN_ID:
+        if JSONBIN_BIN_ID and JSONBIN_BIN_ID.strip():
             logger.info(f"🔍 Test du bin existant: {JSONBIN_BIN_ID}")
-            test_data = storage.load_data()
-            if test_data is not None:
-                logger.info("✅ JSONBin connecté au bin existant")
-                return True
-            else:
-                logger.warning("⚠️ Bin inaccessible, création d'un nouveau...")
+            try:
+                test_data = storage.load_data()
+                if test_data is not None:
+                    logger.info("✅ JSONBin connecté au bin existant avec succès!")
+                    return True
+                else:
+                    logger.warning("⚠️ Bin inaccessible ou vide, création d'un nouveau...")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur test bin existant: {e}")
+                logger.info("🔄 Tentative de création d'un nouveau bin...")
+        else:
+            logger.info("ℹ️ Pas de bin_id fourni, création d'un nouveau bin...")
         
         # Créer un nouveau bin
-        logger.info("🆕 Création d'un nouveau bin...")
-        if storage.create_bin():
-            logger.info("✅ JSONBin initialisé avec succès")
-            return True
-        else:
-            logger.error("❌ Impossible de créer un bin")
+        logger.info("🆕 Création d'un nouveau bin JSONBin...")
+        try:
+            if storage.create_bin():
+                logger.info("✅ JSONBin initialisé avec succès! Nouveau bin créé.")
+                logger.info(f"📝 IMPORTANT: Notez ce bin_id pour la prochaine fois: {storage.bin_id}")
+                return True
+            else:
+                logger.error("❌ Impossible de créer un nouveau bin")
+                storage = None
+                return False
+        except Exception as e:
+            logger.error(f"❌ Erreur création bin: {e}")
+            storage = None
             return False
             
     except Exception as e:
-        logger.error(f"❌ Erreur initialisation JSONBin: {e}")
+        logger.error(f"❌ Erreur générale initialisation JSONBin: {e}")
+        logger.error(f"🔍 Type d'erreur: {type(e).__name__}")
+        storage = None
         return False
 
 def save_to_storage(force=False):
-    """Sauvegarde avec flag de force et meilleure gestion"""
+    """Sauvegarde avec diagnostics améliorés"""
     global _last_save_time, _save_needed
     
-    if not storage:
-        logger.warning("⚠️ Stockage non initialisé")
+    # Vérification de l'état du stockage
+    if storage is None:
+        logger.error("❌ Stockage non initialisé - storage = None")
+        logger.error("💡 Vérifiez les variables JSONBIN_API_KEY et l'initialisation")
+        return False
+    
+    if not hasattr(storage, 'bin_id') or not storage.bin_id:
+        logger.error("❌ Pas de bin_id configuré dans storage")
+        logger.error("💡 Le stockage semble mal initialisé")
         return False
     
     current_time = time.time()
@@ -315,18 +371,20 @@ def save_to_storage(force=False):
     # Throttling (sauf si forcé)
     if not force and current_time - _last_save_time < 10:
         logger.debug("🔄 Sauvegarde throttled")
-        _save_needed = True  # Marquer qu'une sauvegarde est nécessaire
+        _save_needed = True
         return True
     
     with _saving_lock:
         try:
-            logger.info("💾 Démarrage de la sauvegarde...")
+            logger.info(f"💾 Démarrage sauvegarde (bin_id: {storage.bin_id})...")
             
             data = {
                 'user_memory': dict(user_memory),
                 'user_list': user_list,
                 'game_sessions': game_sessions
             }
+            
+            logger.info(f"📦 Données à sauvegarder: {len(data['user_list'])} users, {len(data['user_memory'])} conversations")
             
             success = storage.save_data(data)
             if success:
@@ -340,22 +398,30 @@ def save_to_storage(force=False):
             
         except Exception as e:
             logger.error(f"❌ Erreur sauvegarde: {e}")
+            logger.error(f"🔍 État storage: {storage}")
+            logger.error(f"🔍 bin_id: {getattr(storage, 'bin_id', 'UNDEFINED')}")
             return False
 
 def load_from_storage():
-    """Chargement avec reconstruction des structures"""
+    """Chargement avec diagnostics détaillés"""
     global user_memory, user_list, game_sessions
     
-    if not storage:
-        logger.warning("⚠️ Stockage non initialisé")
+    if storage is None:
+        logger.error("❌ Stockage non initialisé pour le chargement")
+        return False
+    
+    if not hasattr(storage, 'bin_id') or not storage.bin_id:
+        logger.error("❌ Pas de bin_id pour le chargement")
         return False
     
     try:
-        logger.info("📥 Chargement des données...")
+        logger.info(f"📥 Chargement depuis bin_id: {storage.bin_id}...")
         data = storage.load_data()
         if not data:
-            logger.info("📁 Aucune donnée à charger")
+            logger.info("📁 Aucune donnée à charger (bin vide ou nouveau)")
             return False
+        
+        logger.info("🔄 Reconstruction des structures de données...")
         
         # Reconstruire user_memory
         user_memory.clear()
@@ -382,11 +448,18 @@ def load_from_storage():
         if isinstance(loaded_games, dict):
             game_sessions.update(loaded_games)
         
-        logger.info(f"📊 Restauré: {len(user_list)} users, {len(user_memory)} conversations, {len(game_sessions)} jeux")
+        logger.info(f"📊 Données restaurées avec succès:")
+        logger.info(f"  👥 {len(user_list)} utilisateurs")
+        logger.info(f"  💾 {len(user_memory)} conversations") 
+        logger.info(f"  🎲 {len(game_sessions)} jeux actifs")
+        logger.info(f"  📅 Version: {data.get('version', '1.0')}")
+        logger.info(f"  🕐 Timestamp: {data.get('timestamp', 'N/A')}")
         return True
         
     except Exception as e:
         logger.error(f"❌ Erreur chargement: {e}")
+        logger.error(f"🔍 État storage: {storage}")
+        logger.error(f"🔍 bin_id: {getattr(storage, 'bin_id', 'UNDEFINED')}")
         return False
 
 def auto_save():
@@ -1021,22 +1094,42 @@ if __name__ == "__main__":
     else:
         logger.info("✅ Toutes les variables d'environnement sont présentes")
     
-    # Initialiser le stockage
-    logger.info("🔄 Initialisation du stockage...")
-    if init_jsonbin_storage():
-        logger.info("📁 Chargement des données existantes...")
+    # Initialiser le stockage avec diagnostics détaillés
+    logger.info("🔄 === INITIALISATION DU STOCKAGE ===")
+    storage_success = init_jsonbin_storage()
+    
+    if storage_success:
+        logger.info("✅ Stockage JSONBin initialisé avec succès")
+        logger.info("📁 Tentative de chargement des données existantes...")
+        
         if load_from_storage():
-            logger.info("✅ Données restaurées avec succès")
+            logger.info("✅ Données restaurées depuis JSONBin")
         else:
-            logger.info("ℹ️  Démarrage avec données vides")
+            logger.info("ℹ️  Démarrage avec données vides (normal pour le premier lancement)")
         
         # Démarrer l'auto-save
-        logger.info("🔄 Démarrage de l'auto-save...")
+        logger.info("🔄 Démarrage du système de sauvegarde automatique...")
         threading.Thread(target=auto_save, daemon=True).start()
         logger.info("💾 Auto-save activé")
+        
+        # Test de sauvegarde initiale
+        logger.info("🧪 Test de sauvegarde initiale...")
+        if save_to_storage(force=True):
+            logger.info("✅ Test de sauvegarde réussi")
+        else:
+            logger.warning("⚠️ Test de sauvegarde échoué")
+            
     else:
-        logger.warning("⚠️  ATTENTION: Fonctionnement sans sauvegarde!")
-    
+        logger.error("❌ ÉCHEC D'INITIALISATION DU STOCKAGE!")
+        logger.error("⚠️  Le bot fonctionnera SANS sauvegarde!")
+        logger.error("🔧 Vérifications à faire:")
+        logger.error("   1. Variable JSONBIN_API_KEY définie?")
+        logger.error("   2. Connectivité internet OK?")
+        logger.error("   3. Clé API JSONBin valide?")
+        logger.error("   4. Quotas JSONBin non dépassés?")
+        
+        # Forcer storage à None pour éviter les erreurs
+        storage = None
     # Informations de démarrage
     logger.info(f"🎌 {len(COMMANDS)} commandes chargées")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs configurés")
