@@ -8,8 +8,11 @@ Werkzeug==2.3.7
 requests==2.31.0
 urllib3==2.0.7
 
-# OpenAI Integration (ESSENTIAL for otaku commands)
-openai==1.3.8
+# OpenAI Integration (ESSENTIAL for otaku commands) - Version compatible Python 3.13
+openai==1.51.0
+
+# HTTP Client compatible (requis pour OpenAI)
+httpx==0.27.0
 
 # JSON & Data Processing
 jsonify>=0.5
