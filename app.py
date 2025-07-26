@@ -19,7 +19,7 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nakamaverifytoken")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-JSONBIN_API_KEY = os.getenv("JSONBIN_API_KEY", "")
+JSONBIN_API_KEY = "$2a$10$XUdDdy6MCxieCkCAWObx4ePMOlywZwUomubwIamPKO3QJ1aJyY8dO"
 JSONBIN_BIN_ID = os.getenv("JSONBIN_BIN_ID", "")
 ADMIN_IDS = set(id.strip() for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip())
 
