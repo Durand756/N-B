@@ -641,6 +641,248 @@ def broadcast_message(text):
         if message_signature in _broadcast_locks:
             del _broadcast_locks[message_signature]
 
+
+##################IMAGES###########################
+def cmd_image(sender_id, args=""):
+    """Générateur d'images anime/otaku gratuites"""
+    if not args.strip():
+        return """🎨🎌 GÉNÉRATEUR D'IMAGES OTAKU! 🎌🎨
+
+🖼️ /image [description] - Génère une image
+🎨 /image anime girl pink hair - Exemple
+🌸 /image kawaii cat with sword - Exemple  
+⚡ /image random - Image aléatoire
+
+✨ Décris ton rêve otaku nakama! 🎭"""
+    
+    prompt = args.strip().lower()
+    sender_id = str(sender_id)
+    
+    # Images aléatoires si demandé
+    if prompt == "random":
+        random_prompts = [
+            "anime girl with blue hair and katana",
+            "kawaii cat girl in school uniform", 
+            "epic dragon in anime style",
+            "cute anime boy with glasses",
+            "magical girl transformation",
+            "ninja in cherry blossom forest",
+            "robot mech in cyberpunk city",
+            "anime princess with crown"
+        ]
+        prompt = random.choice(random_prompts)
+    
+    try:
+        # Nettoyer et formater le prompt
+        clean_prompt = prompt.replace(' ', '+').replace(',', '%2C')
+        
+        # Utiliser l'API gratuite Picsum + overlay text pour simuler la génération
+        # En réalité, on utilise une API de placeholder avec du texte
+        base_url = "https://picsum.photos/512/512"
+        
+        # Alternative: utiliser une vraie API gratuite comme Pollinations
+        # Cette API est gratuite et génère de vraies images à partir de prompts
+        image_url = f"https://image.pollinations.ai/prompt/{clean_prompt}?width=512&height=512&seed={random.randint(1, 10000)}"
+        
+        # Créer la réponse avec l'URL de l'image
+        response = f"""🎨✨ IMAGE GÉNÉRÉE! ✨🎨
+
+🖼️ Prompt: {prompt}
+🌸 Voici ton image otaku nakama!
+
+{image_url}
+
+🎭 Tape /image pour une nouvelle création!
+⚡ Ou /image random pour surprendre! 💖"""
+        
+        # Ajouter à la mémoire qu'une image a été générée
+        add_to_memory(sender_id, 'bot', f"Image générée: {prompt}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur génération image: {e}")
+        return """🎨💥 Erreur de génération!
+
+🔧 Les serveurs d'images sont occupés!
+⚡ Retry dans quelques secondes nakama!
+🎌 Ou essaie /image random! ✨"""
+
+# Alternative avec une vraie API de génération d'images gratuite
+def cmd_image_advanced(sender_id, args=""):
+    """Version avancée avec vraie génération d'images"""
+    if not args.strip():
+        return """🎨🎌 AI IMAGE GENERATOR! 🎌🎨
+
+🖼️ /image [description] - Génère une image IA
+🎨 Styles: anime, kawaii, cyberpunk, fantasy
+🌸 Exemple: /image anime girl pink hair magic
+⚡ /image random - Surprise aléatoire
+
+✨ Décris ton monde otaku nakama! 🎭"""
+    
+    prompt = args.strip()
+    sender_id = str(sender_id)
+    
+    if prompt.lower() == "random":
+        random_prompts = [
+            "beautiful anime girl with long blue hair holding a glowing sword",
+            "kawaii neko girl in magical school uniform with sparkles",
+            "epic mecha robot in futuristic cyberpunk city at sunset", 
+            "cute anime boy with glasses reading a magic book",
+            "magical girl transformation with rainbow energy aura",
+            "ninja warrior in cherry blossom forest with katana",
+            "dragon girl with horns and wings in fantasy landscape",
+            "anime princess with crown in crystal palace"
+        ]
+        prompt = random.choice(random_prompts)
+    
+    try:
+        # Optimiser le prompt pour l'anime
+        enhanced_prompt = f"anime style, {prompt}, high quality, detailed, colorful, kawaii"
+        
+        # Encoder le prompt pour l'URL
+        import urllib.parse
+        encoded_prompt = urllib.parse.quote(enhanced_prompt)
+        
+        # Utiliser l'API Pollinations (gratuite et sans limite)
+        seed = random.randint(1, 999999)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true"
+        
+        # Créer la réponse
+        response = f"""🎨⚡ IMAGE IA GÉNÉRÉE! ⚡🎨
+
+🖼️ "{prompt}"
+🎌 Style: Anime Optimisé
+🌸 Seed: {seed}
+
+{image_url}
+
+✨ Sauvegarde ton image nakama!
+🎭 /image pour une nouvelle création! 💖"""
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur génération image avancée: {e}")
+        return """🎨💥 Erreur IA temporaire!
+
+🔧 L'intelligence artificielle se repose!
+⚡ Essaie /image random ou retry!
+🎌 Ton image arrive bientôt! ✨"""
+
+# Fonction helper pour valider les prompts
+def validate_image_prompt(prompt):
+    """Valider et nettoyer les prompts d'images"""
+    if not prompt or len(prompt.strip()) < 3:
+        return False, "Prompt trop court! Minimum 3 caractères! 📝"
+    
+    if len(prompt) > 200:
+        return False, "Prompt trop long! Maximum 200 caractères! ✂️"
+    
+    # Mots interdits (optionnel, pour éviter le contenu inapproprié)
+    forbidden_words = ['nsfw', 'nude', 'explicit', 'xxx']
+    for word in forbidden_words:
+        if word in prompt.lower():
+            return False, "🚫 Contenu inapproprié détecté! Reste kawaii! 🌸"
+    
+    return True, prompt.strip()
+
+# Version finale optimisée pour le bot
+def cmd_image_final(sender_id, args=""):
+    """Commande image finale optimisée pour NakamaBot"""
+    if not args.strip():
+        return """🎨🎌 NAKAMABOT IMAGE AI! 🎌🎨
+
+🖼️ /image [description] - Génère ton image
+🎨 /image anime girl blue hair - Exemple
+🌸 /image kawaii cat ninja - Exemple
+⚡ /image random - Surprise otaku
+🎭 /image styles - Voir les styles
+
+✨ Imagine, je crée nakama! 💖"""
+    
+    prompt = args.strip().lower()
+    sender_id = str(sender_id)
+    
+    # Commandes spéciales
+    if prompt == "styles":
+        return """🎨 STYLES DISPONIBLES:
+
+🌸 anime - Style anime classique
+⚡ kawaii - Super mignon
+🔥 cyberpunk - Futuriste néon
+🌙 fantasy - Monde magique
+🗾 traditional - Art japonais
+🤖 mecha - Robots géants
+👘 kimono - Style traditionnel
+🌈 colorful - Explosion de couleurs
+
+💡 Combine les styles: "anime cyberpunk girl" ✨"""
+    
+    if prompt == "random":
+        themes = [
+            "anime girl with magical powers and glowing eyes",
+            "kawaii cat wearing samurai armor in bamboo forest", 
+            "cyberpunk ninja with neon katana in tokyo streets",
+            "cute anime boy with dragon companion",
+            "magical girl in sailor outfit with moon tiara",
+            "mecha pilot girl in futuristic cockpit",
+            "fox girl shrine maiden with spiritual energy",
+            "anime princess with crystal wings in castle"
+        ]
+        prompt = random.choice(themes)
+    
+    # Valider le prompt
+    is_valid, validated_prompt = validate_image_prompt(prompt)
+    if not is_valid:
+        return f"❌ {validated_prompt}"
+    
+    try:
+        # Améliorer le prompt automatiquement
+        enhanced_prompt = f"anime style, high quality, detailed, {validated_prompt}, beautiful, kawaii aesthetic"
+        
+        # Encoder pour l'URL
+        import urllib.parse
+        encoded_prompt = urllib.parse.quote(enhanced_prompt)
+        
+        # Générer l'image avec Pollinations (API gratuite)
+        seed = random.randint(100000, 999999)
+        width, height = 768, 768
+        
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&seed={seed}&enhance=true&model=flux"
+        
+        # Sauvegarder dans la mémoire
+        add_to_memory(sender_id, 'user', f"Image demandée: {validated_prompt}")
+        add_to_memory(sender_id, 'bot', f"Image générée avec seed {seed}")
+        
+        response = f"""🎨⚡ TON IMAGE OTAKU EST PRÊTE! ⚡🎨
+
+🖼️ Prompt: "{validated_prompt}"
+🎲 Seed: {seed}
+📐 Taille: {width}x{height}px
+🤖 Modèle: Flux AI
+
+{image_url}
+
+💾 Sauvegarde vite ton chef-d'œuvre!
+🔄 /image pour une nouvelle création!
+🎌 Arigatou nakama! ✨"""
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur génération image: {e}")
+        return """🎨💥 Erreur temporaire!
+
+🔧 L'IA artistique se repose un moment!
+⚡ Retry dans 10 secondes nakama!
+🎲 Ou essaie /image random! 
+
+🌸 Tes images arrivent bientôt! ✨"""
+###########################################
+
+
 def cmd_broadcast(sender_id, args=""):
     """Diffusion admin avec protection anti-spam renforcée"""
     if not is_admin(sender_id):
