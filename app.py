@@ -563,25 +563,156 @@ def is_admin(user_id):
     """Vérifier admin"""
     return str(user_id) in ADMIN_IDS
 
+
+# Dictionnaire global pour empêcher les broadcasts en double
+_broadcast_locks = {}
+_broadcast_history = {}
+
 def broadcast_message(text):
-    """Diffusion de messages"""
+    """Diffusion de messages avec protection contre les envois multiples"""
     if not text or not user_list:
         return {"sent": 0, "total": 0, "errors": 0}
     
-    success = 0
-    errors = 0
-    for user_id in list(user_list):
-        try:
-            result = send_message(user_id, text)
-            if result.get("success"):
-                success += 1
-            else:
-                errors += 1
-        except Exception:
-            errors += 1
+    # Créer une signature unique pour ce message
+    message_signature = f"{hash(text)}_{len(user_list)}"
+    current_time = time.time()
+    
+    # Vérifier si ce message exact a déjà été envoyé récemment (dans les 30 dernières secondes)
+    if message_signature in _broadcast_history:
+        last_sent_time = _broadcast_history[message_signature]
+        if current_time - last_sent_time < 30:  # 30 secondes de protection
+            logger.warning(f"🚫 Broadcast dupliqué bloqué! Signature: {message_signature}")
+            return {"sent": 0, "total": 0, "errors": 0, "blocked": True}
+    
+    # Vérifier si un broadcast est déjà en cours avec un lock
+    if message_signature in _broadcast_locks:
+        logger.warning(f"🚫 Broadcast déjà en cours! Signature: {message_signature}")
+        return {"sent": 0, "total": 0, "errors": 0, "already_running": True}
+    
+    # Créer un lock pour ce broadcast
+    _broadcast_locks[message_signature] = threading.Lock()
+    
+    try:
+        with _broadcast_locks[message_signature]:
+            # Marquer ce message comme envoyé
+            _broadcast_history[message_signature] = current_time
             
-    return {"sent": success, "total": len(user_list), "errors": errors}
+            # Nettoyer l'historique (garder seulement les 10 derniers)
+            if len(_broadcast_history) > 10:
+                oldest_key = min(_broadcast_history.keys(), key=lambda k: _broadcast_history[k])
+                del _broadcast_history[oldest_key]
+            
+            success = 0
+            errors = 0
+            total_users = len(user_list)
+            
+            logger.info(f"📢 Début broadcast unique vers {total_users} utilisateurs")
+            logger.info(f"🔒 Signature: {message_signature}")
+            
+            for user_id in list(user_list):  # Copie pour éviter la modification pendant l'itération
+                try:
+                    if not user_id or not str(user_id).strip():
+                        continue
+                        
+                    # Petite pause pour éviter de spam l'API Facebook
+                    time.sleep(0.3)
+                    
+                    result = send_message(str(user_id), text)
+                    if result.get("success"):
+                        success += 1
+                        logger.debug(f"✅ Broadcast envoyé à {user_id}")
+                    else:
+                        errors += 1
+                        logger.warning(f"❌ Échec broadcast pour {user_id}: {result.get('error', 'Unknown')}")
+                        
+                except Exception as e:
+                    errors += 1
+                    logger.error(f"❌ Erreur broadcast pour {user_id}: {e}")
+            
+            logger.info(f"📊 Broadcast terminé: {success} succès, {errors} erreurs")
+            return {
+                "sent": success, 
+                "total": total_users, 
+                "errors": errors
+            }
+            
+    finally:
+        # Nettoyer le lock après utilisation
+        if message_signature in _broadcast_locks:
+            del _broadcast_locks[message_signature]
 
+def cmd_broadcast(sender_id, args=""):
+    """Diffusion admin avec protection anti-spam renforcée"""
+    if not is_admin(sender_id):
+        return f"🔐 Accès refusé! Admins seulement! ❌\nTon ID: {sender_id}"
+    
+    if not args.strip():
+        return f"""📢 COMMANDE BROADCAST
+Usage: /broadcast [message]
+
+📊 État actuel:
+• Utilisateurs: {len(user_list)}
+• Broadcasts récents: {len(_broadcast_history)}
+
+⚠️ Protection anti-spam activée (30s entre messages identiques)
+🔐 Commande admin uniquement"""
+    
+    message_text = args.strip()
+    
+    # Vérifications de sécurité
+    if len(message_text) > 1800:
+        return "❌ Message trop long! Maximum 1800 caractères."
+    
+    if not user_list:
+        return "📢 Aucun utilisateur à notifier! Liste vide."
+    
+    # Créer le message final
+    formatted_message = f"📢🎌 ANNONCE NAKAMA!\n\n{message_text}\n\n⚡ Message officiel de Durand 💖"
+    
+    # Log de l'action admin AVANT l'envoi
+    logger.info(f"📢 Admin {sender_id} demande broadcast: '{message_text[:50]}...'")
+    
+    # Vérifier si c'est un doublon récent
+    message_signature = f"{hash(formatted_message)}_{len(user_list)}"
+    current_time = time.time()
+    
+    if message_signature in _broadcast_history:
+        last_sent = _broadcast_history[message_signature]
+        time_diff = current_time - last_sent
+        if time_diff < 30:
+            return f"🚫 Message identique envoyé il y a {int(time_diff)}s! Attendez {int(30-time_diff)}s."
+    
+    try:
+        # Envoyer le broadcast (UNE SEULE FOIS)
+        result = broadcast_message(formatted_message)
+        
+        # Vérifier si c'était bloqué
+        if result.get("blocked"):
+            return "🚫 Broadcast bloqué - message identique détecté!"
+        
+        if result.get("already_running"):
+            return "🚫 Un broadcast identique est déjà en cours!"
+        
+        # Calculer le taux de succès
+        success_rate = (result['sent'] / result['total'] * 100) if result['total'] > 0 else 0
+        
+        response = f"""📊 BROADCAST ENVOYÉ!
+
+✅ Succès: {result['sent']}
+📱 Total: {result['total']}
+❌ Erreurs: {result['errors']}
+📈 Taux: {success_rate:.1f}%
+
+🔒 Message protégé contre les doublons pendant 30s"""
+
+        if result['sent'] == 0:
+            response += "\n\n💡 Aucun envoi! Vérifiez la connectivité."
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur critique broadcast: {e}")
+        return f"💥 Erreur: {str(e)[:100]}"
 # === COMMANDES DU BOT ===
 
 def cmd_actionverite(sender_id, args=""):
