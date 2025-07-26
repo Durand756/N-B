@@ -895,7 +895,7 @@ def cmd_image_final(sender_id, args=""):
         
         # Générer l'image
         seed = random.randint(100000, 999999)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&model=flux"
+        image_url = f"https://image.pollinations.ai/prompt/{clean_prompt}?width=576&height=1024&seed={random.randint(1, 10000)}&nologo=true"
         
         # Sauvegarder dans la mémoire
         add_to_memory(sender_id, 'user', f"Image demandée: {validated_prompt}")
