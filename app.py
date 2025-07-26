@@ -1201,13 +1201,14 @@ Stockage: {'✅' if storage else '❌'}"""
 def cmd_help(sender_id, args=""):
     """Aide du bot (simplifiée)"""
     commands = {
-        "/start": "🌟 Présentation du bot",
-        "/ia [message]": "🧠 Chat libre avec IA",
-        "/story [theme]": "📖 Histoires anime/manga",
-        "/waifu": "👸 Génère ta waifu",
-        "/actionverite": "🎲 Jeu Action ou Vérité",
-        "/memory": "💾 Voir l'historique",
-        "/help": "❓ Cette aide"
+    "/start": "🌟 Présentation du bot",
+    "/ia [message]": "🧠 Chat libre avec IA",
+    "/story [theme]": "📖 Histoires anime/manga",
+    "/waifu": "👸 Génère ta waifu",
+    "/actionverite": "🎲 Jeu Action ou Vérité",
+    "/image [prompt]": "🎨 Génère des images AI",  # 👈 AJOUTER
+    "/memory": "💾 Voir l'historique",
+    "/help": "❓ Cette aide"
     }
     
     text = "🎌⚡ NAKAMABOT v3.0 GUIDE! ⚡🎌\n\n"
@@ -1228,6 +1229,7 @@ COMMANDS = {
     'story': cmd_story,
     'waifu': cmd_waifu,
     'actionverite': cmd_actionverite,
+    'image': cmd_image_final,  # 👈 AJOUTER CETTE LIGNE
     'memory': cmd_memory,
     'broadcast': cmd_broadcast,
     'admin': cmd_admin,
