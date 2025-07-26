@@ -771,6 +771,53 @@ def cmd_image_advanced(sender_id, args=""):
 ⚡ Essaie /image random ou retry!
 🎌 Ton image arrive bientôt! ✨"""
 
+def send_image_message(recipient_id, image_url, caption=""):
+    """Envoyer une image via Facebook Messenger"""
+    if not PAGE_ACCESS_TOKEN:
+        logger.error("❌ PAGE_ACCESS_TOKEN manquant")
+        return {"success": False, "error": "No token"}
+    
+    if not image_url:
+        logger.warning("⚠️ URL d'image vide")
+        return {"success": False, "error": "Empty image URL"}
+    
+    # Structure pour envoyer une image
+    data = {
+        "recipient": {"id": str(recipient_id)},
+        "message": {
+            "attachment": {
+                "type": "image",
+                "payload": {
+                    "url": image_url,
+                    "is_reusable": True
+                }
+            }
+        }
+    }
+    
+    try:
+        # Envoyer l'image
+        response = requests.post(
+            "https://graph.facebook.com/v18.0/me/messages",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json=data,
+            timeout=20
+        )
+        
+        if response.status_code == 200:
+            # Si il y a une caption, l'envoyer séparément
+            if caption:
+                time.sleep(0.5)  # Petit délai
+                return send_message(recipient_id, caption)
+            return {"success": True}
+        else:
+            logger.error(f"❌ Erreur envoi image: {response.status_code} - {response.text}")
+            return {"success": False, "error": f"API Error {response.status_code}"}
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur envoi image: {e}")
+        return {"success": False, "error": str(e)}
+
 # Fonction helper pour valider les prompts
 def validate_image_prompt(prompt):
     """Valider et nettoyer les prompts d'images"""
@@ -846,30 +893,20 @@ def cmd_image_final(sender_id, args=""):
         import urllib.parse
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         
-        # Générer l'image avec Pollinations (API gratuite)
+        # Générer l'image
         seed = random.randint(100000, 999999)
-        width, height = 768, 768
-        
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&seed={seed}&enhance=true&model=flux"
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&model=flux"
         
         # Sauvegarder dans la mémoire
         add_to_memory(sender_id, 'user', f"Image demandée: {validated_prompt}")
-        add_to_memory(sender_id, 'bot', f"Image générée avec seed {seed}")
+        add_to_memory(sender_id, 'bot', f"Image générée pour: {validated_prompt}")
         
-        response = f"""🎨⚡ TON IMAGE OTAKU EST PRÊTE! ⚡🎨
-
-🖼️ Prompt: "{validated_prompt}"
-🎲 Seed: {seed}
-📐 Taille: {width}x{height}px
-🤖 Modèle: Flux AI
-
-{image_url}
-
-💾 Sauvegarde vite ton chef-d'œuvre!
-🔄 /image pour une nouvelle création!
-🎌 Arigatou nakama! ✨"""
-        
-        return response
+        # Retourner directement l'URL de l'image avec un message simple
+        return {
+            "type": "image",
+            "url": image_url,
+            "caption": f"🎨✨ Voici ton image otaku nakama!\n\n🖼️ \"{validated_prompt}\"\n\n🎌 Tape /image pour une nouvelle création! ⚡"
+        }
         
     except Exception as e:
         logger.error(f"❌ Erreur génération image: {e}")
@@ -1365,22 +1402,35 @@ def webhook():
                             
                             # Ajouter à la mémoire
                             add_to_memory(sender_id, 'user', message_text)
-                            
+                            ###############################################
                             # Traiter la commande
                             response = process_command(sender_id, message_text)
-                            
+
                             if response:
-                                # Ajouter la réponse à la mémoire
-                                add_to_memory(sender_id, 'bot', response)
-                                
-                                # Envoyer la réponse
-                                send_result = send_message(sender_id, response)
-                                
-                                if send_result.get("success"):
-                                    logger.info(f"✅ Réponse envoyée à {sender_id}")
+                                # Vérifier si c'est une réponse image
+                                if isinstance(response, dict) and response.get("type") == "image":
+                                    # Envoyer l'image
+                                                                send_result = send_image_message(sender_id, response["url"], response["caption"])
+                                                                
+                                                                # Ajouter à la mémoire
+                                                                add_to_memory(sender_id, 'bot', f"Image envoyée: {response['caption'][:50]}...")
+                                                                
+                                                                if send_result.get("success"):
+                                                                                                logger.info(f"✅ Image envoyée à {sender_id}")
+                                                                else:
+                                                                                                logger.warning(f"❌ Échec envoi image à {sender_id}")
+                                                                                                # Fallback: envoyer juste le texte
+                                                                                                send_message(sender_id, "🎨 Image générée mais erreur d'envoi! Retry /image! ⚡")
                                 else:
-                                    logger.warning(f"❌ Échec envoi message à {sender_id}")
-                            
+                                                                # Réponse texte normale
+                                                                add_to_memory(sender_id, 'bot', response)
+                                                                send_result = send_message(sender_id, response)
+                                                                
+                                                                if send_result.get("success"):
+                                                                                                logger.info(f"✅ Réponse envoyée à {sender_id}")
+                                                                else:
+                                                                                                logger.warning(f"❌ Échec envoi message à {sender_id}")
+                            #################################################################
         except Exception as e:
             logger.error(f"❌ Erreur webhook: {e}")
             return jsonify({"error": f"Webhook error: {str(e)}"}), 500
