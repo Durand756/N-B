@@ -75,3 +75,24 @@ def execute(sender_id, args=""):
         # Générer l'image avec API gratuite Pollinations
         seed = random.randint(100000, 999999)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&model=flux&nologo=true"
+        
+        # Sauvegarder dans la mémoire
+        add_to_memory(sender_id, 'user', f"Image demandée: {validated_prompt}")
+        add_to_memory(sender_id, 'bot', f"Image générée pour: {validated_prompt}")
+        
+        # Retourner directement l'URL de l'image avec un message simple
+        return {
+            "type": "image",
+            "url": image_url,
+            "caption": f"🎨✨ Voici votre image générée!\n\n🖼️ \"{validated_prompt}\"\n🎯 Seed: {seed}\n\n🎌 Tapez /image pour une nouvelle création! ⚡"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur génération image: {e}")
+        return """🎨💥 Erreur temporaire!
+
+🔧 L'IA artistique se repose un moment!
+⚡ Réessayez dans quelques secondes!
+🎲 Ou essayez /image random! 
+
+🌸 Votre image arrive bientôt! ✨"""
