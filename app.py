@@ -9,6 +9,8 @@ from collections import defaultdict, deque
 import threading
 import time
 import sys
+import base64
+from io import BytesIO
 
 # Configuration du logging 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,6 +27,7 @@ ADMIN_IDS = set(id.strip() for id in os.getenv("ADMIN_IDS", "").split(",") if id
 # Mémoire du bot (stockage local uniquement)
 user_memory = defaultdict(lambda: deque(maxlen=8))
 user_list = set()
+user_last_image = {}  # Stocker la dernière image de chaque utilisateur
 
 def call_mistral_api(messages, max_tokens=200, temperature=0.7):
     """API Mistral avec retry"""
@@ -70,6 +73,68 @@ def call_mistral_api(messages, max_tokens=200, temperature=0.7):
             return None
     
     return None
+
+def analyze_image_with_vision(image_url):
+    """Analyser une image avec l'API Vision de Mistral"""
+    if not MISTRAL_API_KEY:
+        return None
+    
+    try:
+        headers = {
+            "Content-Type": "application/json", 
+            "Authorization": f"Bearer {MISTRAL_API_KEY}"
+        }
+        
+        messages = [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Décris en détail ce que tu vois dans cette image en français. Sois précise et descriptive, comme si tu expliquais à une amie. Maximum 300 mots avec des emojis mignons. 💕"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    }
+                }
+            ]
+        }]
+        
+        data = {
+            "model": "pixtral-12b-2409",  # Modèle vision de Mistral
+            "messages": messages,
+            "max_tokens": 400,
+            "temperature": 0.3
+        }
+        
+        response = requests.post(
+            "https://api.mistral.ai/v1/chat/completions", 
+            headers=headers, 
+            json=data, 
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        else:
+            logger.error(f"❌ Erreur Vision API: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur analyse image: {e}")
+        return None
+
+def download_image_as_base64(image_url):
+    """Télécharger une image et la convertir en base64"""
+    try:
+        response = requests.get(image_url, timeout=15)
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        return None
+    except Exception as e:
+        logger.error(f"❌ Erreur téléchargement image: {e}")
+        return None
 
 def web_search(query):
     """Recherche web pour les informations récentes"""
@@ -146,7 +211,97 @@ def broadcast_message(text):
     logger.info(f"📊 Broadcast terminé: {success} succès, {errors} erreurs")
     return {"sent": success, "total": total_users, "errors": errors}
 
-# === COMMANDES DU BOT ===
+# === NOUVELLES COMMANDES ===
+
+def cmd_anime(sender_id, args=""):
+    """Transformer la dernière image en style anime"""
+    sender_id = str(sender_id)
+    
+    # Vérifier si l'utilisateur a envoyé une image récemment
+    if sender_id not in user_last_image:
+        return f"""🎨 OH ! Je n'ai pas d'image à transformer en anime ! ✨
+
+📸 Envoie-moi d'abord une image, puis tape /anime !
+🎭 Ou utilise /image [description] anime style pour créer directement !
+
+💡 ASTUCE : Envoie une photo → tape /anime → MAGIE ! 🪄💕"""
+    
+    try:
+        # Récupérer l'URL de la dernière image
+        last_image_url = user_last_image[sender_id]
+        
+        # Créer une version anime avec un prompt spécialisé
+        import urllib.parse
+        anime_prompt = "anime style, beautiful detailed anime art, manga style, kawaii, colorful, high quality anime transformation"
+        encoded_prompt = urllib.parse.quote(anime_prompt)
+        
+        # Générer l'image anime avec un seed différent
+        seed = random.randint(100000, 999999)
+        anime_image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&nologo=true"
+        
+        # Sauvegarder dans la mémoire
+        add_to_memory(sender_id, 'user', "Transformation anime demandée")
+        add_to_memory(sender_id, 'bot', f"Image transformée en anime style")
+        
+        # Retourner l'image anime
+        return {
+            "type": "image",
+            "url": anime_image_url,
+            "caption": f"🎭 Tadaaa ! Voici ta transformation anime avec tout mon amour ! ✨\n\n🎨 Style: Anime kawaii détaillé\n🔢 Seed magique: {seed}\n\n💕 J'espère que tu adores le résultat ! Envoie une autre image et tape /anime pour recommencer ! 🌟"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur transformation anime: {e}")
+        return f"""🎭 Oh non ! Une petite erreur dans mon atelier anime ! 😅
+
+🔧 Mes pinceaux magiques ont un petit souci, réessaie !
+📸 Ou envoie une nouvelle image et retente /anime !
+❓ Tape /help si tu as besoin d'aide ! 💖"""
+
+def cmd_vision(sender_id, args=""):
+    """Analyser la dernière image envoyée"""
+    sender_id = str(sender_id)
+    
+    # Vérifier si l'utilisateur a envoyé une image récemment
+    if sender_id not in user_last_image:
+        return f"""👁️ OH ! Je n'ai pas d'image à analyser ! ✨
+
+📸 Envoie-moi d'abord une image, puis tape /vision !
+🔍 Je pourrai te dire tout ce que je vois avec mes yeux de robot ! 
+
+💡 ASTUCE : Envoie une photo → tape /vision → Je décris tout ! 👀💕"""
+    
+    try:
+        # Récupérer l'URL de la dernière image
+        last_image_url = user_last_image[sender_id]
+        
+        # Analyser l'image avec l'API Vision
+        logger.info(f"🔍 Analyse vision pour {sender_id}")
+        
+        vision_result = analyze_image_with_vision(last_image_url)
+        
+        if vision_result:
+            # Sauvegarder dans la mémoire
+            add_to_memory(sender_id, 'user', "Analyse d'image demandée")
+            add_to_memory(sender_id, 'bot', f"Analyse: {vision_result}")
+            
+            return f"👁️ VOICI CE QUE JE VOIS AVEC MES YEUX DE ROBOT ! ✨\n\n{vision_result}\n\n🔍 J'espère que mon analyse te plaît ! Envoie une autre image et tape /vision pour que je regarde encore ! 💕"
+        else:
+            return f"""👁️ Oh non ! Mes yeux de robot ont un petit souci ! 😅
+
+🔧 Ma vision IA est temporairement floue !
+📸 Réessaie avec /vision ou envoie une nouvelle image !
+💡 Ou tape /help pour voir mes autres talents ! 💖"""
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur analyse vision: {e}")
+        return f"""👁️ Oups ! Une petite erreur dans mes circuits visuels ! 😅
+
+🔧 Mes capteurs sont un peu fatigués, réessaie !
+📸 Ou envoie une nouvelle image et retente /vision !
+❓ Tape /help si tu as besoin d'aide ! 💖"""
+
+# === COMMANDES EXISTANTES ===
 
 def cmd_start(sender_id, args=""):
     """Commande de démarrage"""
@@ -154,6 +309,8 @@ def cmd_start(sender_id, args=""):
 
 ✨ Voici ce que je peux faire pour toi :
 🎨 /image [description] - Je crée de magnifiques images avec l'IA !
+🎭 /anime - Je transforme ta dernière image en style anime !
+👁️ /vision - Je décris ce que je vois sur ta dernière image !
 💬 /chat [message] - On peut papoter de tout et de rien !
 ❓ /help - Toutes mes commandes (tape ça pour voir tout !)
 
@@ -254,7 +411,7 @@ def cmd_chat(sender_id, args=""):
     
     messages = [{
         "role": "system", 
-        "content": f"Tu es NakamaBot, une assistante IA très gentille et amicale créée par Durand en 2025. Tu es comme une très bonne amie bienveillante. Tu es super enthousiaste et tu utilises beaucoup d'emojis mignons. Tu proposes souvent aux utilisateurs de taper /help. Si on demande ton créateur, c'est Durand que tu adores. Tu peux créer des images avec /image. Nous sommes en 2025. Réponds en français avec une personnalité amicale et douce, sans expressions romantiques. Maximum 400 caractères."
+        "content": f"Tu es NakamaBot, une assistante IA très gentille et amicale créée par Durand en 2025. Tu es comme une très bonne amie bienveillante. Tu es super enthousiaste et tu utilises beaucoup d'emojis mignons. Tu proposes souvent aux utilisateurs de taper /help. Si on demande ton créateur, c'est Durand que tu adores. Tu peux créer des images avec /image, les transformer en anime avec /anime, et analyser des images avec /vision. Nous sommes en 2025. Réponds en français avec une personnalité amicale et douce, sans expressions romantiques. Maximum 400 caractères."
     }]
     messages.extend(context)
     messages.append({"role": "user", "content": args})
@@ -280,9 +437,12 @@ def cmd_stats(sender_id, args=""):
 
 👥 Mes amis utilisateurs : {len(user_list)} 💕
 💾 Conversations en cours : {len(user_memory)}
+📸 Images en mémoire : {len(user_last_image)}
 🤖 Créée avec amour par : Durand 💖
-📅 Version : 4.0 Amicale (2025)
+📅 Version : 4.0 Amicale + Vision (2025)
 🎨 Génération d'images : ✅ JE SUIS DOUÉE !
+🎭 Transformation anime : ✅ KAWAII !
+👁️ Analyse d'images : ✅ J'AI DES YEUX DE ROBOT !
 💬 Chat intelligent : ✅ ON PEUT TOUT SE DIRE !
 🔐 Accès admin autorisé ✅
 
@@ -349,7 +509,7 @@ def cmd_admin(sender_id, args=""):
         return f"🔐 Oh ! Accès réservé aux admins ! ID: {sender_id}\n💕 Tape /help pour voir mes autres talents !"
     
     if not args.strip():
-        return f"""🔐 PANNEAU ADMIN v4.0 AMICALE 💖
+        return f"""🔐 PANNEAU ADMIN v4.0 AMICALE + VISION 💖
 
 • /admin stats - Mes statistiques détaillées
 • /stats - Statistiques publiques admin
@@ -359,7 +519,9 @@ def cmd_admin(sender_id, args=""):
 📊 MON ÉTAT ACTUEL :
 👥 Mes utilisateurs : {len(user_list)}
 💾 Conversations en cours : {len(user_memory)}
+📸 Images en mémoire : {len(user_last_image)}
 🤖 IA intelligente : {'✅ JE SUIS BRILLANTE !' if MISTRAL_API_KEY else '❌'}
+👁️ Vision IA : {'✅ J\'AI DES YEUX DE ROBOT !' if MISTRAL_API_KEY else '❌'}
 📱 Facebook connecté : {'✅ PARFAIT !' if PAGE_ACCESS_TOKEN else '❌'}
 👨‍💻 Mon créateur adoré : Durand 💕"""
     
@@ -368,10 +530,13 @@ def cmd_admin(sender_id, args=""):
 
 👥 Utilisateurs totaux : {len(user_list)} 💕
 💾 Conversations actives : {len(user_memory)}
+📸 Images stockées : {len(user_last_image)}
 🔐 Admin ID : {sender_id}
 👨‍💻 Mon créateur adoré : Durand ✨
-📅 Version : 4.0 Amicale (2025)
+📅 Version : 4.0 Amicale + Vision (2025)
 🎨 Images générées : ✅ JE SUIS ARTISTE !
+🎭 Transformations anime : ✅ KAWAII !
+👁️ Analyses visuelles : ✅ J'AI DES YEUX DE ROBOT !
 💬 Chat IA : ✅ ON PAPOTE !
 🌐 Statut API : {'✅ Tout fonctionne parfaitement !' if MISTRAL_API_KEY and PAGE_ACCESS_TOKEN else '❌ Quelques petits soucis'}
 
@@ -385,11 +550,13 @@ def cmd_help(sender_id, args=""):
     commands = {
         "/start": "🤖 Ma présentation toute mignonne",
         "/image [description]": "🎨 Je crée des images magnifiques avec l'IA !", 
+        "/anime": "🎭 Je transforme ta dernière image en style anime !",
+        "/vision": "👁️ Je décris ce que je vois sur ta dernière image !",
         "/chat [message]": "💬 On papote de tout avec gentillesse",
         "/help": "❓ Cette aide pleine d'amour"
     }
     
-    text = f"🤖 NAKAMABOT v4.0 AMICALE - GUIDE COMPLET 💖\n\n"
+    text = f"🤖 NAKAMABOT v4.0 AMICALE + VISION - GUIDE COMPLET 💖\n\n"
     text += f"✨ Voici tout ce que je peux faire pour toi :\n\n"
     for cmd, desc in commands.items():
         text += f"{cmd} - {desc}\n"
@@ -402,6 +569,8 @@ def cmd_help(sender_id, args=""):
         text += "/restart - Me redémarrer en douceur\n"
     
     text += f"\n🎨 JE PEUX CRÉER DES IMAGES ! Utilise /image [ta description] !"
+    text += f"\n🎭 JE TRANSFORME EN ANIME ! Envoie une image puis /anime !"
+    text += f"\n👁️ J'ANALYSE TES IMAGES ! Envoie une image puis /vision !"
     text += f"\n👨‍💻 Créée avec tout l'amour du monde par Durand 💕"
     text += f"\n✨ Je suis là pour t'aider avec le sourire !"
     text += f"\n💖 N'hésite jamais à me demander quoi que ce soit !"
@@ -411,6 +580,8 @@ def cmd_help(sender_id, args=""):
 COMMANDS = {
     'start': cmd_start,
     'image': cmd_image,
+    'anime': cmd_anime,
+    'vision': cmd_vision,
     'chat': cmd_chat,
     'stats': cmd_stats,
     'broadcast': cmd_broadcast,
@@ -535,15 +706,16 @@ def send_image_message(recipient_id, image_url, caption=""):
 def home():
     """Route d'accueil"""
     return jsonify({
-        "status": "🤖 NakamaBot v4.0 Amicale Online ! 💖",
+        "status": "🤖 NakamaBot v4.0 Amicale + Vision Online ! 💖",
         "creator": "Durand",
         "personality": "Super gentille et amicale, comme une très bonne amie",
         "year": "2025",
         "commands": len(COMMANDS),
         "users": len(user_list),
         "conversations": len(user_memory),
-        "version": "4.0 Amicale",
-        "features": ["Génération d'images IA", "Chat intelligent et doux", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
+        "images_stored": len(user_last_image),
+        "version": "4.0 Amicale + Vision",
+        "features": ["Génération d'images IA", "Transformation anime", "Analyse d'images IA", "Chat intelligent et doux", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
         "last_update": datetime.now().isoformat()
     })
 
@@ -586,6 +758,21 @@ def webhook():
                         # Ajouter utilisateur
                         user_list.add(sender_id)
                         
+                        # Vérifier si c'est une image
+                        if 'attachments' in event['message']:
+                            for attachment in event['message']['attachments']:
+                                if attachment.get('type') == 'image':
+                                    # Stocker l'URL de l'image pour les commandes /anime et /vision
+                                    image_url = attachment.get('payload', {}).get('url')
+                                    if image_url:
+                                        user_last_image[sender_id] = image_url
+                                        logger.info(f"📸 Image reçue de {sender_id}")
+                                        
+                                        # Répondre automatiquement
+                                        response = f"📸 Super ! J'ai bien reçu ton image ! ✨\n\n🎭 Tape /anime pour la transformer en style anime !\n👁️ Tape /vision pour que je te dise ce que je vois !\n\n💕 Ou continue à me parler normalement !"
+                                        send_message(sender_id, response)
+                                        continue
+                        
                         # Récupérer texte
                         message_text = event['message'].get('text', '').strip()
                         
@@ -606,7 +793,7 @@ def webhook():
                                     else:
                                         logger.warning(f"❌ Échec envoi image à {sender_id}")
                                         # Fallback texte
-                                        send_message(sender_id, f"🎨 Image créée avec amour mais petite erreur d'envoi ! Réessaie /image ! 💕")
+                                        send_message(sender_id, f"🎨 Image créée avec amour mais petite erreur d'envoi ! Réessaie ! 💕")
                                 else:
                                     # Message texte normal
                                     send_result = send_message(sender_id, response)
@@ -628,12 +815,13 @@ def stats():
     return jsonify({
         "users_count": len(user_list),
         "conversations_count": len(user_memory),
+        "images_stored": len(user_last_image),
         "commands_available": len(COMMANDS),
-        "version": "4.0 Amicale",
+        "version": "4.0 Amicale + Vision",
         "creator": "Durand",
         "personality": "Super gentille et amicale, comme une très bonne amie",
         "year": 2025,
-        "features": ["AI Image Generation", "Friendly Chat", "Admin Stats", "Help Suggestions"],
+        "features": ["AI Image Generation", "Anime Transformation", "AI Image Analysis", "Friendly Chat", "Admin Stats", "Help Suggestions"],
         "note": "Statistiques détaillées réservées aux admins via /stats"
     })
 
@@ -645,13 +833,15 @@ def health():
         "personality": "Super gentille et amicale, comme une très bonne amie 💖",
         "services": {
             "ai": bool(MISTRAL_API_KEY),
+            "vision": bool(MISTRAL_API_KEY),
             "facebook": bool(PAGE_ACCESS_TOKEN)
         },
         "data": {
             "users": len(user_list),
-            "conversations": len(user_memory)
+            "conversations": len(user_memory),
+            "images_stored": len(user_last_image)
         },
-        "version": "4.0 Amicale",
+        "version": "4.0 Amicale + Vision",
         "creator": "Durand",
         "timestamp": datetime.now().isoformat()
     }
@@ -675,11 +865,13 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage NakamaBot v4.0 Amicale")
+    logger.info("🚀 Démarrage NakamaBot v4.0 Amicale + Vision")
     logger.info("💖 Personnalité super gentille et amicale, comme une très bonne amie")
     logger.info("👨‍💻 Créée par Durand")
     logger.info("📅 Année: 2025")
     logger.info("🔐 Commande /stats réservée aux admins")
+    logger.info("🎭 Nouvelle fonctionnalité: Transformation anime !")
+    logger.info("👁️ Nouvelle fonctionnalité: Analyse d'images IA !")
     
     # Vérifier variables
     missing_vars = []
@@ -696,7 +888,7 @@ if __name__ == "__main__":
     logger.info(f"🎨 {len(COMMANDS)} commandes disponibles")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs")
     logger.info(f"🌐 Serveur sur le port {port}")
-    logger.info("🎉 NakamaBot Amicale prête à aider avec gentillesse !")
+    logger.info("🎉 NakamaBot Amicale + Vision prête à aider avec gentillesse !")
     
     try:
         app.run(
