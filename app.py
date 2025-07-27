@@ -442,6 +442,183 @@ def send_message(recipient_id, text):
         logger.error(f"❌ Erreur envoi message: {e}")
         return {"success": False, "error": str(e)}
 
+####################################################
+
+def diagnose_commands_issue():
+    """Diagnostic complet du problème de chargement des commandes"""
+    import os
+    import sys
+    
+    print("=" * 60)
+    print("🔍 DIAGNOSTIC NAKAMABOT - PROBLÈME DE COMMANDES")
+    print("=" * 60)
+    
+    # 1. Informations sur l'environnement
+    print(f"🌍 Environnement Python: {sys.version}")
+    print(f"📁 Répertoire de travail: {os.getcwd()}")
+    print(f"📄 Fichier script: {os.path.abspath(__file__)}")
+    print(f"🗂️ Répertoire du script: {os.path.dirname(os.path.abspath(__file__))}")
+    
+    # 2. Contenu du répertoire de travail
+    print("\n📋 CONTENU DU RÉPERTOIRE DE TRAVAIL:")
+    try:
+        items = os.listdir(os.getcwd())
+        for item in sorted(items):
+            path = os.path.join(os.getcwd(), item)
+            if os.path.isdir(path):
+                print(f"  📁 {item}/")
+                try:
+                    sub_items = os.listdir(path)
+                    if sub_items:
+                        print(f"      └─ {len(sub_items)} éléments: {', '.join(sub_items[:5])}")
+                        if len(sub_items) > 5:
+                            print(f"         ... et {len(sub_items) - 5} autres")
+                except:
+                    print("      └─ Erreur lecture")
+            else:
+                size = os.path.getsize(path)
+                print(f"  📄 {item} ({size} bytes)")
+    except Exception as e:
+        print(f"❌ Erreur listage: {e}")
+    
+    # 3. Recherche spécifique du dossier Commandes
+    print("\n🔍 RECHERCHE DU DOSSIER COMMANDES:")
+    possible_names = ["Commandes", "commandes", "Commands", "commands"]
+    possible_paths = [os.getcwd(), os.path.dirname(os.path.abspath(__file__))]
+    
+    found_dirs = []
+    for base_path in possible_paths:
+        for dir_name in possible_names:
+            full_path = os.path.join(base_path, dir_name)
+            if os.path.exists(full_path) and os.path.isdir(full_path):
+                found_dirs.append(full_path)
+                print(f"  ✅ TROUVÉ: {full_path}")
+                
+                try:
+                    files = os.listdir(full_path)
+                    py_files = [f for f in files if f.endswith('.py')]
+                    print(f"      📊 {len(files)} fichiers total, {len(py_files)} fichiers .py")
+                    for py_file in py_files:
+                        file_path = os.path.join(full_path, py_file)
+                        size = os.path.getsize(file_path)
+                        print(f"      📄 {py_file} ({size} bytes)")
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                                if 'def execute(' in content:
+                                    print(f"          ✅ Fonction execute() trouvée")
+                                else:
+                                    print(f"          ❌ Pas de fonction execute()")
+                                if len(content.strip()) == 0:
+                                    print(f"          ⚠️ Fichier vide!")
+                        except Exception as e:
+                            print(f"          ❌ Erreur lecture: {e}")
+                            
+                except Exception as e:
+                    print(f"      ❌ Erreur listage contenu: {e}")
+            else:
+                print(f"  ❌ Non trouvé: {full_path}")
+    
+    if not found_dirs:
+        print("  🚨 AUCUN DOSSIER COMMANDES TROUVÉ!")
+    
+    # 4. Variables d'environnement
+    print(f"\n🔐 VARIABLES D'ENVIRONNEMENT:")
+    print(f"  PAGE_ACCESS_TOKEN: {'✅ Défini' if os.getenv('PAGE_ACCESS_TOKEN') else '❌ Manquant'}")
+    print(f"  MISTRAL_API_KEY: {'✅ Défini' if os.getenv('MISTRAL_API_KEY') else '❌ Manquant'}")
+    print(f"  VERIFY_TOKEN: {'✅ Défini' if os.getenv('VERIFY_TOKEN') else '❌ Manquant'}")
+    print(f"  ADMIN_IDS: {'✅ Défini' if os.getenv('ADMIN_IDS') else '❌ Manquant'}")
+    
+    print("=" * 60)
+
+def create_test_commands():
+    """Créer des commandes de test si le dossier n'existe pas"""
+    import os
+    
+    commands_dir = "Commandes"
+    
+    try:
+        # Créer le dossier s'il n'existe pas
+        if not os.path.exists(commands_dir):
+            os.makedirs(commands_dir)
+            print(f"✅ Dossier {commands_dir} créé")
+        
+        # Créer __init__.py
+        init_file = os.path.join(commands_dir, "__init__.py")
+        if not os.path.exists(init_file):
+            with open(init_file, 'w') as f:
+                f.write("# Commands package\n")
+            print(f"✅ {init_file} créé")
+        
+        # Créer une commande de test
+        test_command = os.path.join(commands_dir, "test.py")
+        if not os.path.exists(test_command):
+            with open(test_command, 'w', encoding='utf-8') as f:
+                f.write('''def execute(sender_id, args):
+    """Commande de test simple"""
+    return f"🎌 Test réussi! Utilisateur: {sender_id}, Args: {args} ⚡"
+''')
+            print(f"✅ Commande de test créée: {test_command}")
+        
+        # Créer commande help
+        help_command = os.path.join(commands_dir, "help.py")
+        if not os.path.exists(help_command):
+            with open(help_command, 'w', encoding='utf-8') as f:
+                f.write('''def execute(sender_id, args):
+    """Afficher l'aide"""
+    return """🌟 NakamaBot v3.0 - Commandes:
+    
+/help - Cette aide
+/test [message] - Test du bot
+/start - Démarrer
+/ping - Test de connexion
+
+✨ Bot créé par Durand ⚡"""
+''')
+            print(f"✅ Commande help créée: {help_command}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Erreur création commandes: {e}")
+        return False
+
+def load_embedded_commands():
+    """Charger des commandes intégrées en cas d'échec"""
+    global COMMANDS
+    
+    logger.info("🔄 Chargement des commandes intégrées de secours...")
+    
+    def help_cmd(sender_id, args):
+        return """🌟 NakamaBot v3.0 - Commandes:
+/help - Cette aide
+/start - Démarrer
+/ping - Test connexion
+/test [msg] - Test
+✨ By Durand ⚡"""
+    
+    def start_cmd(sender_id, args):
+        user_list.add(sender_id)
+        return "🎌 Konnichiwa! NakamaBot v3.0 prêt! Tape /help ⚡"
+    
+    def ping_cmd(sender_id, args):
+        return "🏓 Pong! Bot en ligne! ⚡"
+    
+    def test_cmd(sender_id, args):
+        return f"🎌 Test OK! Args: {args or 'aucun'} ⚡"
+    
+    COMMANDS = {
+        'help': help_cmd,
+        'start': start_cmd,
+        'ping': ping_cmd,
+        'test': test_cmd
+    }
+    
+    logger.info(f"✅ {len(COMMANDS)} commandes intégrées chargées")
+
+##################################################
+
 # === ROUTES FLASK ===
 
 @app.route("/", methods=['GET'])
@@ -658,10 +835,15 @@ def debug_filesystem():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage NakamaBot v3.0...")
-    logger.info("👨‍💻 Créé par Durand")
+    print("🚀 DÉMARRAGE NAKAMABOT v3.0...")
+    print("👨‍💻 Créé par Durand")
+    print("=" * 50)
     
-    # Vérifier les variables d'environnement
+    # ===== DIAGNOSTIC AU DÉMARRAGE =====
+    print("🔍 LANCEMENT DU DIAGNOSTIC...")
+    diagnose_commands_issue()
+    
+    # ===== VÉRIFICATION VARIABLES =====
     missing_vars = []
     if not PAGE_ACCESS_TOKEN:
         missing_vars.append("PAGE_ACCESS_TOKEN")
@@ -674,18 +856,44 @@ if __name__ == "__main__":
     else:
         logger.info("✅ Variables d'environnement OK")
     
-    # Charger les commandes
+    # ===== CHARGEMENT DES COMMANDES =====
     logger.info("📦 Chargement des commandes...")
+    
+    # Essayer de charger les commandes normalement
     load_commands()
     
+    # Si aucune commande chargée, essayer de créer des commandes de test
     if len(COMMANDS) == 0:
-        logger.warning("⚠️ Aucune commande chargée! Vérifiez votre dossier de commandes.")
+        logger.warning("⚠️ Aucune commande trouvée! Tentative de création...")
+        
+        if create_test_commands():
+            logger.info("🔄 Rechargement après création...")
+            load_commands()
+        
+        # Si toujours rien, utiliser les commandes intégrées
+        if len(COMMANDS) == 0:
+            logger.warning("🚨 Chargement des commandes de secours...")
+            load_embedded_commands()
     
-    logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs configurés")
-    logger.info(f"🌐 Serveur Flask démarrant sur le port {port}")
-    logger.info("🎉 NakamaBot prêt à servir!")
+    # ===== RAPPORT FINAL =====
+    print("=" * 50)
+    print("📊 RAPPORT FINAL:")
+    print(f"🤖 Commandes chargées: {len(COMMANDS)}")
+    print(f"📋 Liste: {list(COMMANDS.keys())}")
+    print(f"🔐 Admins: {len(ADMIN_IDS)}")
+    print(f"👥 Utilisateurs: {len(user_list)}")
+    print(f"🌐 Port: {port}")
     
-    # Démarrer Flask
+    if len(COMMANDS) == 0:
+        print("🚨 ERREUR CRITIQUE: Aucune commande disponible!")
+        print("🛑 Le bot ne pourra pas répondre aux messages!")
+    else:
+        print("✅ Bot opérationnel!")
+    
+    print("=" * 50)
+    print("🎉 NakamaBot prêt à servir!")
+    
+    # ===== DÉMARRAGE FLASK =====
     try:
         app.run(
             host="0.0.0.0", 
