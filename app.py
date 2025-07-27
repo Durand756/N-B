@@ -264,7 +264,7 @@ def cmd_image(sender_id, args=""):
         
         # Générer l'image avec l'API Pollinations
         seed = random.randint(100000, 999999)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&nologo=true"
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true"
         
         # Sauvegarder dans la mémoire
         add_to_memory(sender_id, 'user', f"Image demandée: {prompt}")
@@ -472,6 +472,7 @@ def cmd_help(sender_id, args=""):
         text += "/restart - Me redémarrer en douceur\n"
     
     text += f"\n🎨 JE PEUX CRÉER DES IMAGES ! Utilise /image [ta description] !"
+    text += f"\n😍 JE RÉAGIS AVEC DES EMOJIS à tes messages selon ton humeur !"
     text += f"\n👨‍💻 Créée avec tout l'amour du monde par Durand 💕"
     text += f"\n✨ Je suis là pour t'aider avec le sourire {terms['secondary']} !"
     text += f"\n💖 N'hésite jamais à me demander quoi que ce soit !"
@@ -558,6 +559,146 @@ def send_message(recipient_id, text):
         logger.error(f"❌ Erreur envoi: {e}")
         return {"success": False, "error": str(e)}
 
+def get_emoji_reaction(message_text):
+    """Déterminer l'emoji de réaction selon le contenu du message"""
+    if not message_text:
+        return None
+    
+    message_lower = message_text.lower()
+    
+    # Réactions selon les émotions et contenus
+    reactions = {
+        # Amour et affection
+        ('❤️', ['amour', 'love', 'aime', 'adore', 'coeur', 'cœur', 'bisou', 'kiss', 'câlin']),
+        
+        # Joie et bonheur
+        ('😍', ['magnifique', 'sublime', 'gorgeous', 'beautiful', 'splendide', 'parfait', 'génial']),
+        ('🥰', ['mignon', 'cute', 'adorable', 'craquant', 'kawaii', 'sweet', 'tendre']),
+        ('😂', ['lol', 'mdr', 'haha', 'hihi', 'ptdr', 'drôle', 'marrant', 'rigolo']),
+        ('🎉', ['bravo', 'félicitation', 'réussi', 'gagné', 'victoire', 'champion', 'top']),
+        ('✨', ['magique', 'féérique', 'merveilleux', 'fantastique', 'incroyable', 'wow']),
+        
+        # Tristesse et réconfort
+        ('🥺', ['triste', 'pleure', 'chagrin', 'peine', 'mal', 'déprimé', 'down']),
+        ('🤗', ['réconfort', 'courage', 'soutien', 'difficile', 'dur', 'help', 'aide']),
+        
+        # Surprise et étonnement
+        ('😱', ['choc', 'incroyable', 'oh mon dieu', 'omg', 'shocking', 'wow', 'dingue']),
+        ('🤔', ['pourquoi', 'comment', 'bizarre', 'étrange', 'comprends pas', 'hmm']),
+        
+        # Compliments et beauté
+        ('🔥', ['hot', 'sexy', 'canon', 'bombe', 'stylé', 'classe', 'swag']),
+        ('👑', ['queen', 'king', 'princesse', 'prince', 'royal', 'majesté']),
+        ('💎', ['précieux', 'rare', 'unique', 'bijou', 'trésor', 'perle']),
+        
+        # Nourriture
+        ('🤤', ['miam', 'délicieux', 'yummy', 'faim', 'appétit', 'gourmand']),
+        ('🍰', ['gâteau', 'cake', 'pâtisserie', 'sucré', 'dessert']),
+        
+        # Fatigue et sommeil
+        ('😴', ['fatigue', 'dodo', 'sommeil', 'tired', 'épuisé', 'sieste']),
+        ('🌙', ['bonne nuit', 'dors bien', 'sweet dreams', 'night']),
+        
+        # Salutations
+        ('👋', ['salut', 'coucou', 'hello', 'hi', 'bonjour', 'bonsoir']),
+        ('💋', ['bye', 'au revoir', 'à bientôt', 'see you', 'ciao']),
+        
+        # Accord et approbation
+        ('👍', ['oui', 'yes', 'd\'accord', 'ok', 'parfait', 'exact', 'absolument']),
+        ('💯', ['exactement', 'totally', 'completely', '100%', 'tout à fait']),
+        
+        # Créativité et art
+        ('🎨', ['dessin', 'art', 'créatif', 'artistique', 'peinture', 'design']),
+        ('📸', ['photo', 'selfie', 'pic', 'image', 'picture', 'snap']),
+        
+        # Musique et danse
+        ('🎵', ['musique', 'music', 'chanson', 'mélodie', 'son', 'beat']),
+        ('💃', ['danse', 'dance', 'bouger', 'rythme', 'groove']),
+        
+        # Voyage et aventure
+        ('✈️', ['voyage', 'vacances', 'trip', 'aventure', 'partir', 'destination']),
+        ('🌴', ['plage', 'beach', 'mer', 'océan', 'soleil', 'bronzer']),
+        
+        # Technologies
+        ('💻', ['code', 'programming', 'tech', 'ordinateur', 'développeur']),
+        ('🤖', ['robot', 'ia', 'ai', 'intelligence artificielle', 'bot']),
+        
+        # Sport et fitness
+        ('💪', ['sport', 'fitness', 'musculation', 'fort', 'power', 'workout']),
+        ('🏃‍♀️', ['courir', 'running', 'marathon', 'jogging', 'cardio']),
+        
+        # Météo
+        ('☀️', ['soleil', 'sunny', 'beau temps', 'chaleur', 'summer']),
+        ('🌧️', ['pluie', 'rain', 'mouillé', 'orage', 'weather']),
+        
+        # Animaux
+        ('🐱', ['chat', 'cat', 'minou', 'félin', 'kitty']),
+        ('🐶', ['chien', 'dog', 'toutou', 'puppy', 'woof']),
+        ('🦄', ['licorne', 'unicorn', 'magique', 'rainbow', 'arc-en-ciel']),
+        
+        # Fêtes et célébrations
+        ('🎂', ['anniversaire', 'birthday', 'fête', 'celebration', 'party']),
+        ('🎄', ['noël', 'christmas', 'fête', 'cadeau', 'santa']),
+        ('💐', ['fleurs', 'flowers', 'bouquet', 'roses', 'nature']),
+        
+        # Émotions négatives
+        ('😤', ['énervé', 'angry', 'colère', 'frustré', 'irrité']),
+        ('😰', ['stress', 'anxieux', 'panique', 'worried', 'angoisse']),
+        
+        # Amitié
+        ('👯‍♀️', ['amie', 'copine', 'friend', 'bestie', 'bff']),
+        ('🤝', ['accord', 'deal', 'partenaire', 'équipe', 'together'])
+    }
+    
+    # Chercher la première correspondance
+    for emoji, keywords in reactions:
+        if any(keyword in message_lower for keyword in keywords):
+            return emoji
+    
+    # Réactions par longueur et type de message
+    if len(message_text) > 200:
+        return '📚'  # Message long
+    elif '?' in message_text:
+        return '🤔'  # Question
+    elif '!' in message_text and len([c for c in message_text if c == '!']) >= 2:
+        return '🎉'  # Excitation
+    elif message_text.isupper() and len(message_text) > 3:
+        return '📢'  # Cri/emphase
+    
+    return None  # Pas de réaction
+
+def send_reaction(recipient_id, emoji):
+    """Envoyer une réaction emoji via Facebook Messenger"""
+    if not PAGE_ACCESS_TOKEN or not emoji:
+        return {"success": False, "error": "No token or emoji"}
+    
+    # Note: Facebook Messenger ne supporte pas les réactions automatiques via l'API
+    # On simule en envoyant un message court avec l'emoji
+    reaction_message = f"{emoji}"
+    
+    data = {
+        "recipient": {"id": str(recipient_id)},
+        "message": {"text": reaction_message}
+    }
+    
+    try:
+        response = requests.post(
+            "https://graph.facebook.com/v18.0/me/messages",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return {"success": True}
+        else:
+            logger.error(f"❌ Erreur réaction: {response.status_code}")
+            return {"success": False, "error": f"API Error {response.status_code}"}
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur envoi réaction: {e}")
+        return {"success": False, "error": str(e)}
+
 def send_image_message(recipient_id, image_url, caption=""):
     """Envoyer une image via Facebook Messenger"""
     if not PAGE_ACCESS_TOKEN:
@@ -619,7 +760,7 @@ def home():
         "conversations": len(user_memory),
         "gender_detection": len(user_gender),
         "version": "4.0 Féminine",
-        "features": ["Génération d'images IA", "Chat intelligent et doux", "Adaptation de genre", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
+        "features": ["Génération d'images IA", "Chat intelligent et doux", "Adaptation de genre", "Réactions emoji automatiques", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
         "last_update": datetime.now().isoformat()
     })
 
@@ -668,6 +809,16 @@ def webhook():
                         if message_text:
                             logger.info(f"📨 Message de {sender_id}: {message_text[:50]}...")
                             
+                            # Détecter et envoyer une réaction emoji d'abord
+                            emoji_reaction = get_emoji_reaction(message_text)
+                            if emoji_reaction and not message_text.startswith('/'):
+                                # Envoyer la réaction avec un petit délai pour paraître naturel
+                                time.sleep(0.3)
+                                reaction_result = send_reaction(sender_id, emoji_reaction)
+                                if reaction_result.get("success"):
+                                    logger.info(f"✅ Réaction {emoji_reaction} envoyée à {sender_id}")
+                                    time.sleep(0.5)  # Pause avant la réponse principale
+                            
                             # Traiter commande
                             response = process_command(sender_id, message_text)
 
@@ -710,7 +861,7 @@ def stats():
         "creator": "Durand",
         "personality": "Super gentille et féminine avec adaptation de genre",
         "year": 2025,
-        "features": ["AI Image Generation", "Gender-Adaptive Chat", "Admin Stats", "Help Suggestions"],
+        "features": ["AI Image Generation", "Gender-Adaptive Chat", "Emoji Reactions", "Admin Stats", "Help Suggestions"],
         "note": "Statistiques détaillées réservées aux admins via /stats"
     })
 
@@ -755,6 +906,7 @@ if __name__ == "__main__":
     
     logger.info("🚀 Démarrage NakamaBot v4.0 Féminine")
     logger.info("💖 Personnalité super gentille et féminine avec adaptation de genre")
+    logger.info("😍 Système de réactions emoji automatiques activé")
     logger.info("👨‍💻 Créée par Durand")
     logger.info("📅 Année: 2025")
     logger.info("🔐 Commande /stats réservée aux admins")
@@ -774,7 +926,7 @@ if __name__ == "__main__":
     logger.info(f"🎨 {len(COMMANDS)} commandes disponibles")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs")
     logger.info(f"🌐 Serveur sur le port {port}")
-    logger.info("🎉 NakamaBot Féminine prête à aider avec amour et adaptation de genre !")
+    logger.info("🎉 NakamaBot Féminine prête à aider avec amour, adaptation de genre et réactions emoji !")
     
     try:
         app.run(
