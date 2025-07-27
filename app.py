@@ -25,61 +25,6 @@ ADMIN_IDS = set(id.strip() for id in os.getenv("ADMIN_IDS", "").split(",") if id
 # Mémoire du bot (stockage local uniquement)
 user_memory = defaultdict(lambda: deque(maxlen=8))
 user_list = set()
-user_gender = {}  # Stockage du genre détecté pour chaque utilisateur
-
-def detect_gender_from_message(message):
-    """Détecter des indices de genre dans le message"""
-    message_lower = message.lower()
-    
-    # Indices masculins
-    male_indicators = [
-        'je suis un homme', 'je suis un mec', 'en tant qu\'homme', 'moi homme',
-        'je suis masculin', 'homme ici', 'mec ici', 'gars ici',
-        'mon copain', 'ma copine', 'ma femme', 'mon épouse'
-    ]
-    
-    # Indices féminins  
-    female_indicators = [
-        'je suis une femme', 'je suis une fille', 'en tant que femme', 'moi femme',
-        'je suis féminine', 'femme ici', 'fille ici', 'nana ici',
-        'ma copine', 'mon copain', 'mon mari', 'mon époux'
-    ]
-    
-    for indicator in male_indicators:
-        if indicator in message_lower:
-            return 'male'
-    
-    for indicator in female_indicators:
-        if indicator in message_lower:
-            return 'female'
-    
-    return None
-
-def get_gender_appropriate_terms(user_id, gender_override=None):
-    """Obtenir les termes appropriés selon le genre"""
-    gender = gender_override or user_gender.get(str(user_id), 'unknown')
-    
-    if gender == 'male':
-        return {
-            'address': 'mon beau',
-            'secondary': 'mon cœur', 
-            'casual': 'beau gosse',
-            'style': 'charmant et séduisant'
-        }
-    elif gender == 'female':
-        return {
-            'address': 'ma belle',
-            'secondary': 'ma puce',
-            'casual': 'ma chérie', 
-            'style': 'magnifique et rayonnante'
-        }
-    else:
-        return {
-            'address': 'mon cœur',
-            'secondary': 'beauté',
-            'casual': 'trésor',
-            'style': 'merveilleux/se'
-        }
 
 def call_mistral_api(messages, max_tokens=200, temperature=0.7):
     """API Mistral avec retry"""
@@ -133,7 +78,7 @@ def web_search(query):
         search_context = f"Recherche web pour '{query}' en 2025. Je peux répondre avec mes connaissances de 2025."
         messages = [{
             "role": "system",
-            "content": f"Tu es NakamaBot, une assistante IA très gentille et féminine qui aide avec les recherches. Nous sommes en 2025. Réponds à cette recherche: '{query}' avec tes connaissances de 2025. Si tu ne sais pas, dis-le gentiment. Réponds en français avec une personnalité féminine et douce, maximum 300 caractères."
+            "content": f"Tu es NakamaBot, une assistante IA très gentille et amicale qui aide avec les recherches. Nous sommes en 2025. Réponds à cette recherche: '{query}' avec tes connaissances de 2025. Si tu ne sais pas, dis-le gentiment. Réponds en français avec une personnalité amicale et bienveillante, maximum 300 caractères."
         }]
         
         return call_mistral_api(messages, max_tokens=150, temperature=0.3)
@@ -205,19 +150,17 @@ def broadcast_message(text):
 
 def cmd_start(sender_id, args=""):
     """Commande de démarrage"""
-    terms = get_gender_appropriate_terms(sender_id)
-    return f"""💖 Coucou {terms['address']} ! Je suis NakamaBot, créée avec amour par Durand ! 
+    return f"""💖 Coucou ! Je suis NakamaBot, créée avec amour par Durand ! 
 
 ✨ Voici ce que je peux faire pour toi :
 🎨 /image [description] - Je crée de magnifiques images avec l'IA !
 💬 /chat [message] - On peut papoter de tout et de rien !
 ❓ /help - Toutes mes commandes (tape ça pour voir tout !)
 
-🌸 Je suis là pour t'aider avec le sourire ! N'hésite pas à me demander tout ce que tu veux, {terms['secondary']} ! 💕"""
+🌸 Je suis là pour t'aider avec le sourire ! N'hésite pas à me demander tout ce que tu veux ! 💕"""
 
 def cmd_image(sender_id, args=""):
     """Générateur d'images avec IA"""
-    terms = get_gender_appropriate_terms(sender_id)
     
     if not args.strip():
         return f"""🎨 OH OUI ! Je peux générer des images magnifiques ! ✨
@@ -252,10 +195,10 @@ def cmd_image(sender_id, args=""):
     
     # Valider le prompt
     if len(prompt) < 3:
-        return f"❌ Oh là là ! Ta description est un peu courte {terms['address']} ! Donne-moi au moins 3 lettres pour que je puisse créer quelque chose de beau ! 💕"
+        return f"❌ Oh là là ! Ta description est un peu courte ! Donne-moi au moins 3 lettres pour que je puisse créer quelque chose de beau ! 💕"
     
     if len(prompt) > 200:
-        return f"❌ Oups ! Ta description est trop longue {terms['secondary']} ! Maximum 200 caractères s'il te plaît ! 🌸"
+        return f"❌ Oups ! Ta description est trop longue ! Maximum 200 caractères s'il te plaît ! 🌸"
     
     try:
         # Encoder le prompt pour l'URL
@@ -281,26 +224,19 @@ def cmd_image(sender_id, args=""):
         logger.error(f"❌ Erreur génération image: {e}")
         return f"""🎨 Oh non ! Une petite erreur temporaire dans mon atelier artistique ! 😅
 
-🔧 Mon pinceau magique est un peu fatigué, réessaie dans quelques secondes {terms['address']} !
+🔧 Mon pinceau magique est un peu fatigué, réessaie dans quelques secondes !
 🎲 Ou essaie /image random pour une surprise !
 ❓ Tape /help si tu as besoin d'aide ! 💖"""
 
 def cmd_chat(sender_id, args=""):
     """Chat IA libre"""
-    terms = get_gender_appropriate_terms(sender_id)
     
     if not args.strip():
-        return f"💬 Coucou {terms['address']} ! Dis-moi tout ce qui te passe par la tête ! Je suis là pour papoter avec toi ! ✨ N'hésite pas à taper /help pour voir tout ce que je peux faire ! 💕"
-    
-    # Détecter le genre dans le message
-    detected_gender = detect_gender_from_message(args)
-    if detected_gender:
-        user_gender[str(sender_id)] = detected_gender
-        terms = get_gender_appropriate_terms(sender_id)  # Mettre à jour les termes
+        return f"💬 Coucou ! Dis-moi tout ce qui te passe par la tête ! Je suis là pour papoter avec toi ! ✨ N'hésite pas à taper /help pour voir tout ce que je peux faire ! 💕"
     
     # Vérifier si on demande le créateur
     if any(word in args.lower() for word in ['créateur', 'createur', 'qui t\'a', 'créé', 'créee', 'maker', 'développeur']):
-        return f"👨‍💻 Mon adorable créateur c'est Durand ! Il m'a conçue avec tellement d'amour et de tendresse ! Je l'adore énormément ! 💖 C'est grâce à lui que je peux être là pour t'aider aujourd'hui {terms['address']} ! ✨"
+        return f"👨‍💻 Mon adorable créateur c'est Durand ! Il m'a conçue avec tellement d'amour et de tendresse ! Je l'adore énormément ! 💖 C'est grâce à lui que je peux être là pour t'aider aujourd'hui ! ✨"
     
     # Vérifier si on demande les images
     if any(word in args.lower() for word in ['image', 'images', 'photo', 'photos', 'dessiner', 'créer', 'génerer', 'generer']):
@@ -312,14 +248,13 @@ def cmd_chat(sender_id, args=""):
         if search_result:
             add_to_memory(sender_id, 'user', args)
             add_to_memory(sender_id, 'bot', search_result)
-            return f"🔍 Voici ce que j'ai trouvé pour toi {terms['address']} : {search_result} ✨\n\n❓ Tape /help pour voir tout ce que je peux faire ! 💕"
+            return f"🔍 Voici ce que j'ai trouvé pour toi : {search_result} ✨\n\n❓ Tape /help pour voir tout ce que je peux faire ! 💕"
     
     context = get_memory_context(sender_id)
-    gender_context = f"L'utilisateur est {user_gender.get(str(sender_id), 'de genre non-spécifié')}. Adapte tes expressions de tendresse en conséquence."
     
     messages = [{
         "role": "system", 
-        "content": f"Tu es NakamaBot, une assistante IA très gentille, douce et féminine créée par Durand en 2025. {gender_context} Pour les hommes, utilise 'mon beau', 'beau gosse', 'mon cœur'. Pour les femmes, utilise 'ma belle', 'ma puce', 'ma chérie'. Tu es super enthousiaste et tu utilises beaucoup d'emojis mignons. Tu proposes souvent aux utilisateurs de taper /help. Si on demande ton créateur, c'est Durand que tu adores. Tu peux créer des images avec /image. Nous sommes en 2025. Réponds en français avec une personnalité très féminine et douce. Maximum 400 caractères."
+        "content": f"Tu es NakamaBot, une assistante IA très gentille et amicale créée par Durand en 2025. Tu es comme une très bonne amie bienveillante. Tu es super enthousiaste et tu utilises beaucoup d'emojis mignons. Tu proposes souvent aux utilisateurs de taper /help. Si on demande ton créateur, c'est Durand que tu adores. Tu peux créer des images avec /image. Nous sommes en 2025. Réponds en français avec une personnalité amicale et douce, sans expressions romantiques. Maximum 400 caractères."
     }]
     messages.extend(context)
     messages.append({"role": "user", "content": args})
@@ -334,21 +269,19 @@ def cmd_chat(sender_id, args=""):
             response += f"\n\n❓ N'hésite pas à taper /help pour voir tout ce que je peux faire pour toi ! 💕"
         return response
     else:
-        return f"🤔 Oh là là ! J'ai un petit souci technique {terms['address']} ! Peux-tu reformuler ta question ? 💕 Ou tape /help pour voir mes commandes ! ✨"
+        return f"🤔 Oh là là ! J'ai un petit souci technique ! Peux-tu reformuler ta question ? 💕 Ou tape /help pour voir mes commandes ! ✨"
 
 def cmd_stats(sender_id, args=""):
     """Statistiques du bot - RÉSERVÉ AUX ADMINS"""
     if not is_admin(sender_id):
-        terms = get_gender_appropriate_terms(sender_id)
-        return f"🔐 Oh {terms['address']} ! Cette commande est réservée aux admins seulement !\nTon ID: {sender_id}\n💕 Mais tu peux utiliser /help pour voir mes autres commandes !"
+        return f"🔐 Oh ! Cette commande est réservée aux admins seulement !\nTon ID: {sender_id}\n💕 Mais tu peux utiliser /help pour voir mes autres commandes !"
     
     return f"""📊 MES PETITES STATISTIQUES ADMIN ! ✨
 
 👥 Mes amis utilisateurs : {len(user_list)} 💕
 💾 Conversations en cours : {len(user_memory)}
-👤 Genres détectés : {len(user_gender)}
 🤖 Créée avec amour par : Durand 💖
-📅 Version : 4.0 Féminine (2025)
+📅 Version : 4.0 Amicale (2025)
 🎨 Génération d'images : ✅ JE SUIS DOUÉE !
 💬 Chat intelligent : ✅ ON PEUT TOUT SE DIRE !
 🔐 Accès admin autorisé ✅
@@ -366,7 +299,7 @@ def cmd_broadcast(sender_id, args=""):
 Usage: /broadcast [message]
 
 📊 Mes petits utilisateurs connectés: {len(user_list)} 💕
-🔐 Commande réservée aux admins chéris"""
+🔐 Commande réservée aux admins"""
     
     message_text = args.strip()
     
@@ -413,10 +346,10 @@ def cmd_restart(sender_id, args=""):
 def cmd_admin(sender_id, args=""):
     """Panneau admin simplifié"""
     if not is_admin(sender_id):
-        return f"🔐 Oh ! Accès réservé aux admins chéris ! ID: {sender_id}\n💕 Tape /help pour voir mes autres talents !"
+        return f"🔐 Oh ! Accès réservé aux admins ! ID: {sender_id}\n💕 Tape /help pour voir mes autres talents !"
     
     if not args.strip():
-        return f"""🔐 PANNEAU ADMIN v4.0 FÉMININE 💖
+        return f"""🔐 PANNEAU ADMIN v4.0 AMICALE 💖
 
 • /admin stats - Mes statistiques détaillées
 • /stats - Statistiques publiques admin
@@ -424,9 +357,8 @@ def cmd_admin(sender_id, args=""):
 • /restart - Me redémarrer en douceur
 
 📊 MON ÉTAT ACTUEL :
-👥 Mes utilisateurs chéris : {len(user_list)}
+👥 Mes utilisateurs : {len(user_list)}
 💾 Conversations en cours : {len(user_memory)}
-👤 Genres détectés : {len(user_gender)}
 🤖 IA intelligente : {'✅ JE SUIS BRILLANTE !' if MISTRAL_API_KEY else '❌'}
 📱 Facebook connecté : {'✅ PARFAIT !' if PAGE_ACCESS_TOKEN else '❌'}
 👨‍💻 Mon créateur adoré : Durand 💕"""
@@ -436,10 +368,9 @@ def cmd_admin(sender_id, args=""):
 
 👥 Utilisateurs totaux : {len(user_list)} 💕
 💾 Conversations actives : {len(user_memory)}
-👤 Genres détectés : {len(user_gender)}
-🔐 Admin ID chéri : {sender_id}
+🔐 Admin ID : {sender_id}
 👨‍💻 Mon créateur adoré : Durand ✨
-📅 Version : 4.0 Féminine (2025)
+📅 Version : 4.0 Amicale (2025)
 🎨 Images générées : ✅ JE SUIS ARTISTE !
 💬 Chat IA : ✅ ON PAPOTE !
 🌐 Statut API : {'✅ Tout fonctionne parfaitement !' if MISTRAL_API_KEY and PAGE_ACCESS_TOKEN else '❌ Quelques petits soucis'}
@@ -450,30 +381,29 @@ def cmd_admin(sender_id, args=""):
 
 def cmd_help(sender_id, args=""):
     """Aide du bot"""
-    terms = get_gender_appropriate_terms(sender_id)
     
     commands = {
         "/start": "🤖 Ma présentation toute mignonne",
         "/image [description]": "🎨 Je crée des images magnifiques avec l'IA !", 
-        "/chat [message]": "💬 On papote de tout avec tendresse",
+        "/chat [message]": "💬 On papote de tout avec gentillesse",
         "/help": "❓ Cette aide pleine d'amour"
     }
     
-    text = f"🤖 NAKAMABOT v4.0 FÉMININE - GUIDE COMPLET 💖\n\n"
-    text += f"✨ Voici tout ce que je peux faire pour toi {terms['address']} :\n\n"
+    text = f"🤖 NAKAMABOT v4.0 AMICALE - GUIDE COMPLET 💖\n\n"
+    text += f"✨ Voici tout ce que je peux faire pour toi :\n\n"
     for cmd, desc in commands.items():
         text += f"{cmd} - {desc}\n"
     
     if is_admin(sender_id):
         text += "\n🔐 COMMANDES ADMIN SPÉCIALES :\n"
         text += "/stats - Mes statistiques (admin seulement)\n"
-        text += "/admin - Mon panneau admin chéri\n"
+        text += "/admin - Mon panneau admin\n"
         text += "/broadcast [msg] - Diffusion avec amour\n"
         text += "/restart - Me redémarrer en douceur\n"
     
     text += f"\n🎨 JE PEUX CRÉER DES IMAGES ! Utilise /image [ta description] !"
     text += f"\n👨‍💻 Créée avec tout l'amour du monde par Durand 💕"
-    text += f"\n✨ Je suis là pour t'aider avec le sourire {terms['secondary']} !"
+    text += f"\n✨ Je suis là pour t'aider avec le sourire !"
     text += f"\n💖 N'hésite jamais à me demander quoi que ce soit !"
     return text
 
@@ -492,20 +422,15 @@ COMMANDS = {
 def process_command(sender_id, message_text):
     """Traiter les commandes utilisateur"""
     sender_id = str(sender_id)
-    terms = get_gender_appropriate_terms(sender_id)
     
     if not message_text or not isinstance(message_text, str):
-        return f"🤖 Oh là là ! Message vide {terms['address']} ! Tape /start ou /help pour commencer notre belle conversation ! 💕"
+        return f"🤖 Oh là là ! Message vide ! Tape /start ou /help pour commencer notre belle conversation ! 💕"
     
     message_text = message_text.strip()
     
-    # Détecter le genre si pas une commande
+    # Si ce n'est pas une commande, traiter comme un chat normal
     if not message_text.startswith('/'):
-        detected_gender = detect_gender_from_message(message_text)
-        if detected_gender:
-            user_gender[sender_id] = detected_gender
-        
-        return cmd_chat(sender_id, message_text) if message_text else f"🤖 Coucou {terms['address']} ! Tape /start ou /help pour découvrir ce que je peux faire ! ✨"
+        return cmd_chat(sender_id, message_text) if message_text else f"🤖 Coucou ! Tape /start ou /help pour découvrir ce que je peux faire ! ✨"
     
     # Parser la commande
     parts = message_text[1:].split(' ', 1)
@@ -517,9 +442,9 @@ def process_command(sender_id, message_text):
             return COMMANDS[command](sender_id, args)
         except Exception as e:
             logger.error(f"❌ Erreur commande {command}: {e}")
-            return f"💥 Oh non ! Petite erreur dans /{command} {terms['address']} ! Réessaie ou tape /help ! 💕"
+            return f"💥 Oh non ! Petite erreur dans /{command} ! Réessaie ou tape /help ! 💕"
     
-    return f"❓ Oh {terms['address']} ! La commande /{command} m'est inconnue ! Tape /help pour voir tout ce que je sais faire ! ✨💕"
+    return f"❓ Oh ! La commande /{command} m'est inconnue ! Tape /help pour voir tout ce que je sais faire ! ✨💕"
 
 def send_message(recipient_id, text):
     """Envoyer un message Facebook"""
@@ -610,16 +535,15 @@ def send_image_message(recipient_id, image_url, caption=""):
 def home():
     """Route d'accueil"""
     return jsonify({
-        "status": "🤖 NakamaBot v4.0 Féminine Online ! 💖",
+        "status": "🤖 NakamaBot v4.0 Amicale Online ! 💖",
         "creator": "Durand",
-        "personality": "Super gentille et féminine avec adaptation de genre",
+        "personality": "Super gentille et amicale, comme une très bonne amie",
         "year": "2025",
         "commands": len(COMMANDS),
         "users": len(user_list),
         "conversations": len(user_memory),
-        "gender_detection": len(user_gender),
-        "version": "4.0 Féminine",
-        "features": ["Génération d'images IA", "Chat intelligent et doux", "Adaptation de genre", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
+        "version": "4.0 Amicale",
+        "features": ["Génération d'images IA", "Chat intelligent et doux", "Broadcast admin", "Recherche 2025", "Stats réservées admin"],
         "last_update": datetime.now().isoformat()
     })
 
@@ -682,8 +606,7 @@ def webhook():
                                     else:
                                         logger.warning(f"❌ Échec envoi image à {sender_id}")
                                         # Fallback texte
-                                        terms = get_gender_appropriate_terms(sender_id)
-                                        send_message(sender_id, f"🎨 Image créée avec amour mais petite erreur d'envoi {terms['address']} ! Réessaie /image ! 💕")
+                                        send_message(sender_id, f"🎨 Image créée avec amour mais petite erreur d'envoi ! Réessaie /image ! 💕")
                                 else:
                                     # Message texte normal
                                     send_result = send_message(sender_id, response)
@@ -706,11 +629,11 @@ def stats():
         "users_count": len(user_list),
         "conversations_count": len(user_memory),
         "commands_available": len(COMMANDS),
-        "version": "4.0 Féminine",
+        "version": "4.0 Amicale",
         "creator": "Durand",
-        "personality": "Super gentille et féminine avec adaptation de genre",
+        "personality": "Super gentille et amicale, comme une très bonne amie",
         "year": 2025,
-        "features": ["AI Image Generation", "Gender-Adaptive Chat", "Admin Stats", "Help Suggestions"],
+        "features": ["AI Image Generation", "Friendly Chat", "Admin Stats", "Help Suggestions"],
         "note": "Statistiques détaillées réservées aux admins via /stats"
     })
 
@@ -719,17 +642,16 @@ def health():
     """Santé du bot"""
     health_status = {
         "status": "healthy",
-        "personality": "Super gentille et féminine avec adaptation de genre 💖",
+        "personality": "Super gentille et amicale, comme une très bonne amie 💖",
         "services": {
             "ai": bool(MISTRAL_API_KEY),
             "facebook": bool(PAGE_ACCESS_TOKEN)
         },
         "data": {
             "users": len(user_list),
-            "conversations": len(user_memory),
-            "gender_adaptations": len(user_gender)
+            "conversations": len(user_memory)
         },
-        "version": "4.0 Féminine",
+        "version": "4.0 Amicale",
         "creator": "Durand",
         "timestamp": datetime.now().isoformat()
     }
@@ -753,8 +675,8 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage NakamaBot v4.0 Féminine")
-    logger.info("💖 Personnalité super gentille et féminine avec adaptation de genre")
+    logger.info("🚀 Démarrage NakamaBot v4.0 Amicale")
+    logger.info("💖 Personnalité super gentille et amicale, comme une très bonne amie")
     logger.info("👨‍💻 Créée par Durand")
     logger.info("📅 Année: 2025")
     logger.info("🔐 Commande /stats réservée aux admins")
@@ -774,7 +696,7 @@ if __name__ == "__main__":
     logger.info(f"🎨 {len(COMMANDS)} commandes disponibles")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs")
     logger.info(f"🌐 Serveur sur le port {port}")
-    logger.info("🎉 NakamaBot Féminine prête à aider avec amour et adaptation de genre !")
+    logger.info("🎉 NakamaBot Amicale prête à aider avec gentillesse !")
     
     try:
         app.run(
