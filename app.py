@@ -90,7 +90,7 @@ def analyze_image_with_vision(image_url):
             "content": [
                 {
                     "type": "text",
-                    "text": "Décris en détail ce que tu vois dans cette image en français. Sois précise et descriptive, comme si tu expliquais à une amie. Maximum 300 mots avec des emojis mignons. 💕"
+                    "text": "Décris en détail ce que tu vois dans cette image en français. Sois précise et descriptive, comme si tu expliquais à un(e) ami(e). Maximum 300 mots avec des emojis mignons. 💕"
                 },
                 {
                     "type": "image_url",
@@ -285,9 +285,9 @@ def cmd_vision(sender_id, args=""):
             add_to_memory(sender_id, 'user', "Analyse d'image demandée")
             add_to_memory(sender_id, 'bot', f"Analyse: {vision_result}")
             
-            return f"👁️ VOICI CE QUE JE VOIS AVEC MES YEUX DE ROBOT ! ✨\n\n{vision_result}\n\n🔍 J'espère que mon analyse te plaît ! Envoie une autre image et tape /vision pour que je regarde encore ! 💕"
+            return f"👁️ VOICI CE QUE JE VOIS AVEC MES YEUX DE NAKAMA! ✨\n\n{vision_result}\n\n🔍 J'espère que mon analyse te plaît ! Envoie une autre image et tape /vision pour que je regarde encore ! 💕"
         else:
-            return f"""👁️ Oh non ! Mes yeux de robot ont un petit souci ! 😅
+            return f"""👁️ Oh non ! Mes yeux de Nakama ont un petit souci ! 😅
 
 🔧 Ma vision IA est temporairement floue !
 📸 Réessaie avec /vision ou envoie une nouvelle image !
