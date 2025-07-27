@@ -207,7 +207,7 @@ def cmd_image(sender_id, args=""):
         
         # Générer l'image avec l'API Pollinations
         seed = random.randint(100000, 999999)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true"
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&seed={seed}&enhance=true&nologo=true"
         
         # Sauvegarder dans la mémoire
         add_to_memory(sender_id, 'user', f"Image demandée: {prompt}")
