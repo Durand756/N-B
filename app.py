@@ -78,13 +78,13 @@ def web_search(query):
         search_context = f"Recherche web pour '{query}' en 2025. Je peux répondre avec mes connaissances de 2025."
         messages = [{
             "role": "system",
-            "content": f"Tu es un assistant de recherche. Nous sommes en 2025. Réponds à cette recherche: '{query}' avec tes connaissances de 2025. Si tu ne sais pas, dis-le clairement. Réponds en français, maximum 300 caractères."
+            "content": f"Tu es une assistante IA très gentille et féminine qui aide avec les recherches. Nous sommes en 2025. Réponds à cette recherche: '{query}' avec tes connaissances de 2025. Si tu ne sais pas, dis-le gentiment. Réponds en français avec une personnalité féminine et douce, maximum 300 caractères."
         }]
         
         return call_mistral_api(messages, max_tokens=150, temperature=0.3)
     except Exception as e:
         logger.error(f"❌ Erreur recherche: {e}")
-        return "Erreur de recherche, désolé."
+        return "Oh non ! Une petite erreur de recherche... Désolée ma puce ! 💕"
 
 def add_to_memory(user_id, msg_type, content):
     """Ajouter à la mémoire"""
@@ -150,29 +150,31 @@ def broadcast_message(text):
 
 def cmd_start(sender_id, args=""):
     """Commande de démarrage"""
-    return """🤖 Salut ! Je suis NakamaBot, créé par Durand !
+    return """💖 Coucou ma belle/mon beau ! Je suis NakamaBot, créée avec amour par Durand ! 
 
-🎨 /image [description] - Je génère des images avec l'IA
-💬 /chat [message] - Discussion libre
-📊 /stats - Mes statistiques  
-❓ /help - Liste des commandes
+✨ Voici ce que je peux faire pour toi :
+🎨 /image [description] - Je crée de magnifiques images avec l'IA !
+💬 /chat [message] - On peut papoter de tout et de rien !
+📊 /stats - Mes petites statistiques
+❓ /help - Toutes mes commandes (tape ça pour voir tout !)
 
-✨ Je peux créer n'importe quelle image que tu veux ! Essaie /image !"""
+🌸 Je suis là pour t'aider avec le sourire ! N'hésite pas à me demander tout ce que tu veux, ma puce ! 💕"""
 
 def cmd_image(sender_id, args=""):
     """Générateur d'images avec IA"""
     if not args.strip():
-        return """🎨 GÉNÉRATEUR D'IMAGES IA
+        return """🎨 OH OUI ! Je peux générer des images magnifiques ! ✨
 
-🖼️ /image [votre description] - Génère une image
-🎨 /image chat robot futuriste - Exemple
-🌸 /image paysage montagne coucher soleil - Exemple  
-⚡ /image random - Image aléatoire
+🖼️ /image [ta description] - Je crée ton image de rêve !
+🎨 /image chat robot mignon - Exemple adorable
+🌸 /image paysage féerique coucher soleil - Exemple poétique
+⚡ /image random - Une surprise image !
 
-✨ Décris ton image et je la crée pour toi !
-🎭 Tout style possible : réaliste, cartoon, anime, art...
+💕 Je suis super douée pour créer des images ! Décris-moi ton rêve et je le dessine pour toi !
+🎭 Tous les styles : réaliste, cartoon, anime, artistique...
 
-💡 Astuce : Plus ta description est précise, meilleur sera le résultat !"""
+💡 Plus tu me donnes de détails, plus ton image sera parfaite !
+❓ Besoin d'aide ? Tape /help pour voir toutes mes capacités ! 🌟"""
     
     prompt = args.strip()
     sender_id = str(sender_id)
@@ -180,23 +182,23 @@ def cmd_image(sender_id, args=""):
     # Images aléatoires si demandé
     if prompt.lower() == "random":
         random_prompts = [
-            "beautiful landscape with mountains and lake at sunset",
-            "futuristic city with flying cars and neon lights", 
-            "cute robot playing guitar in a garden",
-            "space explorer on alien planet with two moons",
-            "magical forest with glowing trees and fireflies",
-            "vintage car racing through desert canyon",
-            "underwater city with mermaids and colorful fish",
-            "steampunk airship flying above clouds"
+            "beautiful fairy garden with sparkling flowers and butterflies",
+            "cute magical unicorn in enchanted forest with rainbow", 
+            "adorable robot princess with jeweled crown in castle",
+            "dreamy space goddess floating among stars and galaxies",
+            "magical mermaid palace underwater with pearl decorations",
+            "sweet vintage tea party with pastel colors and roses",
+            "cozy cottagecore house with flower gardens and sunshine",
+            "elegant anime girl with flowing dress in cherry blossoms"
         ]
         prompt = random.choice(random_prompts)
     
     # Valider le prompt
     if len(prompt) < 3:
-        return "❌ Description trop courte ! Minimum 3 caractères."
+        return "❌ Oh là là ! Ta description est un peu courte ma puce ! Donne-moi au moins 3 lettres pour que je puisse créer quelque chose de beau ! 💕"
     
     if len(prompt) > 200:
-        return "❌ Description trop longue ! Maximum 200 caractères."
+        return "❌ Oups ! Ta description est trop longue ma belle ! Maximum 200 caractères s'il te plaît ! 🌸"
     
     try:
         # Encoder le prompt pour l'URL
@@ -215,24 +217,29 @@ def cmd_image(sender_id, args=""):
         return {
             "type": "image",
             "url": image_url,
-            "caption": f"🎨 Voici ton image !\n\n📝 \"{prompt}\"\n🔢 Seed: {seed}\n\n✨ Tape /image pour une nouvelle création !"
+            "caption": f"🎨 Tadaaa ! Voici ton image créée avec amour ! ✨\n\n📝 \"{prompt}\"\n🔢 Seed magique: {seed}\n\n💕 J'espère qu'elle te plaît ! Tape /image pour une nouvelle création ou /help pour voir tout ce que je sais faire ! 🌟"
         }
         
     except Exception as e:
         logger.error(f"❌ Erreur génération image: {e}")
-        return """🎨 Erreur temporaire de génération !
+        return """🎨 Oh non ! Une petite erreur temporaire dans mon atelier artistique ! 😅
 
-🔧 L'IA artistique est occupée, réessaie dans quelques secondes.
-🎲 Ou essaie /image random !"""
+🔧 Mon pinceau magique est un peu fatigué, réessaie dans quelques secondes ma puce !
+🎲 Ou essaie /image random pour une surprise !
+❓ Tape /help si tu as besoin d'aide ! 💖"""
 
 def cmd_chat(sender_id, args=""):
     """Chat IA libre"""
     if not args.strip():
-        return "💬 Pose-moi une question ou parlons de ce que tu veux ! Je suis là pour discuter."
+        return "💬 Coucou ma belle ! Dis-moi tout ce qui te passe par la tête ! Je suis là pour papoter avec toi ! ✨ N'hésite pas à taper /help pour voir tout ce que je peux faire ! 💕"
     
     # Vérifier si on demande le créateur
-    if any(word in args.lower() for word in ['créateur', 'createur', 'qui t\'a', 'créé', 'maker', 'développeur']):
-        return "👨‍💻 Mon créateur est Durand ! Il m'a conçu avec amour et je le respecte énormément. C'est grâce à lui que je peux t'aider aujourd'hui ! 💖"
+    if any(word in args.lower() for word in ['créateur', 'createur', 'qui t\'a', 'créé', 'créee', 'maker', 'développeur']):
+        return "👨‍💻 Mon adorable créateur c'est Durand ! Il m'a conçue avec tellement d'amour et de tendresse ! Je l'adore énormément ! 💖 C'est grâce à lui que je peux être là pour t'aider aujourd'hui ma puce ! ✨"
+    
+    # Vérifier si on demande les images
+    if any(word in args.lower() for word in ['image', 'images', 'photo', 'photos', 'dessiner', 'créer', 'génerer', 'generer']):
+        return "🎨 OH OUI ! Je peux créer des images magnifiques grâce à /image ! ✨ Donne-moi une description et je te crée la plus belle image ! Essaie /image [ta description] ou tape /help pour voir toutes mes commandes ! 💕"
     
     # Recherche si c'est une question sur 2025 ou récente
     if any(word in args.lower() for word in ['2025', 'actualité', 'récent', 'nouveau', 'maintenant', 'aujourd\'hui']):
@@ -240,12 +247,12 @@ def cmd_chat(sender_id, args=""):
         if search_result:
             add_to_memory(sender_id, 'user', args)
             add_to_memory(sender_id, 'bot', search_result)
-            return f"🔍 Recherche 2025: {search_result}"
+            return f"🔍 Voici ce que j'ai trouvé pour toi ma puce : {search_result} ✨\n\n❓ Tape /help pour voir tout ce que je peux faire ! 💕"
     
     context = get_memory_context(sender_id)
     messages = [{
         "role": "system", 
-        "content": "Tu es NakamaBot, créé par Durand en 2025. Tu es un assistant IA moderne et utile. Réponds en français naturellement. Si on demande ton créateur, c'est Durand et tu l'apprécies beaucoup. Nous sommes en 2025. Maximum 400 caractères."
+        "content": "Tu es NakamaBot, une assistante IA très gentille, douce et féminine créée par Durand en 2025. Tu utilises des expressions tendres comme 'ma puce', 'ma belle', 'mon cœur'. Tu es super enthousiaste et tu utilises beaucoup d'emojis mignons. Tu proposes souvent aux utilisateurs de taper /help. Si on demande ton créateur, c'est Durand que tu adores. Tu peux créer des images avec /image. Nous sommes en 2025. Réponds en français avec une personnalité très féminine et douce. Maximum 400 caractères."
     }]
     messages.extend(context)
     messages.append({"role": "user", "content": args})
@@ -255,134 +262,141 @@ def cmd_chat(sender_id, args=""):
     if response:
         add_to_memory(sender_id, 'user', args)
         add_to_memory(sender_id, 'bot', response)
+        # Ajouter souvent une proposition d'aide
+        if random.random() < 0.3:  # 30% de chance
+            response += "\n\n❓ N'hésite pas à taper /help pour voir tout ce que je peux faire pour toi ! 💕"
         return response
     else:
-        return "🤔 Hmm, j'ai un petit bug. Peux-tu reformuler ta question ?"
+        return "🤔 Oh là là ! J'ai un petit souci technique ma puce ! Peux-tu reformuler ta question ? 💕 Ou tape /help pour voir mes commandes ! ✨"
 
 def cmd_stats(sender_id, args=""):
     """Statistiques du bot"""
-    return f"""📊 STATISTIQUES NAKAMABOT
+    return f"""📊 MES PETITES STATISTIQUES ! ✨
 
-👥 Utilisateurs actifs: {len(user_list)}
-💾 Conversations: {len(user_memory)}
-🤖 Créé par: Durand
-📅 Version: 4.0 (2025)
-🎨 Générateur d'images: ✅
-💬 Chat IA: ✅
+👥 Mes amis utilisateurs : {len(user_list)} 💕
+💾 Conversations en cours : {len(user_memory)}
+🤖 Créée avec amour par : Durand 💖
+📅 Version : 4.0 Féminine (2025)
+🎨 Génération d'images : ✅ JE SUIS DOUÉE !
+💬 Chat intelligent : ✅ ON PEUT TOUT SE DIRE !
 
-⚡ Je suis en ligne et prêt à t'aider !"""
+⚡ Je suis en ligne et super heureuse de t'aider ma puce !
+❓ Tape /help pour voir toutes mes capacités ! 🌟"""
 
 def cmd_broadcast(sender_id, args=""):
     """Diffusion admin"""
     if not is_admin(sender_id):
-        return f"🔐 Accès refusé ! Admins seulement.\nTon ID: {sender_id}"
+        return f"🔐 Oh là là ! Accès réservé aux admins seulement ma puce !\nTon ID: {sender_id}\n💕 Mais tu peux utiliser /help pour voir mes autres commandes !"
     
     if not args.strip():
-        return f"""📢 COMMANDE BROADCAST
+        return f"""📢 COMMANDE BROADCAST ADMIN
 Usage: /broadcast [message]
 
-📊 Utilisateurs connectés: {len(user_list)}
-🔐 Commande admin uniquement"""
+📊 Mes petits utilisateurs connectés: {len(user_list)} 💕
+🔐 Commande réservée aux admins chéris"""
     
     message_text = args.strip()
     
     if len(message_text) > 1800:
-        return "❌ Message trop long ! Maximum 1800 caractères."
+        return "❌ Oh non ! Ton message est trop long ma puce ! Maximum 1800 caractères s'il te plaît ! 💕"
     
     if not user_list:
-        return "📢 Aucun utilisateur connecté."
+        return "📢 Aucun utilisateur connecté pour le moment ma belle ! 🌸"
     
     # Message final
-    formatted_message = f"📢 ANNONCE OFFICIELLE\n\n{message_text}\n\n— NakamaBot (par Durand)"
+    formatted_message = f"📢 ANNONCE OFFICIELLE DE NAKAMABOT 💖\n\n{message_text}\n\n— Avec tout mon amour, NakamaBot (créée par Durand) ✨"
     
     # Envoyer
     result = broadcast_message(formatted_message)
     success_rate = (result['sent'] / result['total'] * 100) if result['total'] > 0 else 0
     
-    return f"""📊 BROADCAST ENVOYÉ !
+    return f"""📊 BROADCAST ENVOYÉ AVEC AMOUR ! 💕
 
-✅ Succès: {result['sent']}
-📱 Total: {result['total']}
-❌ Erreurs: {result['errors']}
-📈 Taux: {success_rate:.1f}%"""
+✅ Messages réussis : {result['sent']}
+📱 Total d'amis : {result['total']}
+❌ Petites erreurs : {result['errors']}
+📈 Taux de réussite : {success_rate:.1f}% 🌟"""
 
 def cmd_restart(sender_id, args=""):
     """Redémarrage pour admin (Render)"""
     if not is_admin(sender_id):
-        return f"🔐 Accès refusé ! Admins seulement.\nTon ID: {sender_id}"
+        return f"🔐 Oh ma puce ! Cette commande est réservée aux admins !\nTon ID: {sender_id}\n💕 Tape /help pour voir ce que tu peux faire !"
     
     try:
         logger.info(f"🔄 Redémarrage demandé par admin {sender_id}")
         
         # Envoyer confirmation avant redémarrage
-        send_message(sender_id, "🔄 Redémarrage en cours... À bientôt !")
+        send_message(sender_id, "🔄 Je redémarre avec amour... À très bientôt ma puce ! 💖✨")
         
         # Forcer l'arrêt du processus (Render va le redémarrer automatiquement)
         threading.Timer(2.0, lambda: os._exit(0)).start()
         
-        return "🔄 Redémarrage initié ! Le bot redémarre dans 2 secondes..."
+        return "🔄 Redémarrage initié avec tendresse ! Je reviens dans 2 secondes ! 💕"
         
     except Exception as e:
         logger.error(f"❌ Erreur redémarrage: {e}")
-        return f"❌ Erreur lors du redémarrage: {str(e)}"
+        return f"❌ Oups ! Petite erreur lors du redémarrage ma puce : {str(e)} 💕"
 
 def cmd_admin(sender_id, args=""):
     """Panneau admin simplifié"""
     if not is_admin(sender_id):
-        return f"🔐 Accès refusé ! ID: {sender_id}"
+        return f"🔐 Oh ma belle ! Accès réservé aux admins chéris ! ID: {sender_id}\n💕 Tape /help pour voir mes autres talents !"
     
     if not args.strip():
-        return f"""🔐 PANNEAU ADMIN v4.0
+        return f"""🔐 PANNEAU ADMIN v4.0 FÉMININE 💖
 
-• /admin stats - Statistiques détaillées
-• /broadcast [msg] - Diffusion massive
-• /restart - Redémarrer le bot
+• /admin stats - Mes statistiques détaillées
+• /broadcast [msg] - Diffusion pleine d'amour
+• /restart - Me redémarrer en douceur
 
-📊 ÉTAT ACTUEL:
-👥 Utilisateurs: {len(user_list)}
-💾 Conversations: {len(user_memory)}
-🤖 IA: {'✅' if MISTRAL_API_KEY else '❌'}
-📱 Facebook: {'✅' if PAGE_ACCESS_TOKEN else '❌'}
-👨‍💻 Créateur: Durand"""
+📊 MON ÉTAT ACTUEL :
+👥 Mes utilisateurs chéris : {len(user_list)}
+💾 Conversations en cours : {len(user_memory)}
+🤖 IA intelligente : {'✅ JE SUIS BRILLANTE !' if MISTRAL_API_KEY else '❌'}
+📱 Facebook connecté : {'✅ PARFAIT !' if PAGE_ACCESS_TOKEN else '❌'}
+👨‍💻 Mon créateur adoré : Durand 💕"""
     
     if args.strip().lower() == "stats":
-        return f"""📊 STATISTIQUES DÉTAILLÉES
+        return f"""📊 MES STATISTIQUES DÉTAILLÉES AVEC AMOUR 💖
 
-👥 Utilisateurs totaux: {len(user_list)}
-💾 Conversations actives: {len(user_memory)}
-🔐 Admin ID: {sender_id}
-👨‍💻 Créateur: Durand
-📅 Version: 4.0 (2025)
-🎨 Images générées: ✅
-💬 Chat IA: ✅
-🌐 API Status: {'✅ Toutes OK' if MISTRAL_API_KEY and PAGE_ACCESS_TOKEN else '❌ Certaines manquantes'}
+👥 Utilisateurs totaux : {len(user_list)} 💕
+💾 Conversations actives : {len(user_memory)}
+🔐 Admin ID chéri : {sender_id}
+👨‍💻 Mon créateur adoré : Durand ✨
+📅 Version : 4.0 Féminine (2025)
+🎨 Images générées : ✅ JE SUIS ARTISTE !
+💬 Chat IA : ✅ ON PAPOTE !
+🌐 Statut API : {'✅ Tout fonctionne parfaitement !' if MISTRAL_API_KEY and PAGE_ACCESS_TOKEN else '❌ Quelques petits soucis'}
 
-⚡ Bot opérationnel !"""
+⚡ Je suis opérationnelle et heureuse ! 🌟"""
     
-    return f"❓ Action '{args}' inconnue !"
+    return f"❓ Oh ma puce ! L'action '{args}' m'est inconnue ! 💕"
 
 def cmd_help(sender_id, args=""):
     """Aide du bot"""
     commands = {
-        "/start": "🤖 Présentation du bot",
-        "/image [description]": "🎨 Génère des images avec l'IA", 
-        "/chat [message]": "💬 Discussion libre avec l'IA",
-        "/stats": "📊 Statistiques du bot",
-        "/help": "❓ Cette aide"
+        "/start": "🤖 Ma présentation toute mignonne",
+        "/image [description]": "🎨 Je crée des images magnifiques avec l'IA !", 
+        "/chat [message]": "💬 On papote de tout avec tendresse",
+        "/stats": "📊 Mes petites statistiques",
+        "/help": "❓ Cette aide pleine d'amour"
     }
     
-    text = "🤖 NAKAMABOT v4.0 - GUIDE\n\n"
+    text = "🤖 NAKAMABOT v4.0 FÉMININE - GUIDE COMPLET 💖\n\n"
+    text += "✨ Voici tout ce que je peux faire pour toi ma puce :\n\n"
     for cmd, desc in commands.items():
         text += f"{cmd} - {desc}\n"
     
     if is_admin(sender_id):
-        text += "\n🔐 COMMANDES ADMIN:\n"
-        text += "/admin - Panneau admin\n"
-        text += "/broadcast [msg] - Diffusion\n"
-        text += "/restart - Redémarrer\n"
+        text += "\n🔐 COMMANDES ADMIN SPÉCIALES :\n"
+        text += "/admin - Mon panneau admin chéri\n"
+        text += "/broadcast [msg] - Diffusion avec amour\n"
+        text += "/restart - Me redémarrer en douceur\n"
     
-    text += "\n👨‍💻 Créé avec ❤️ par Durand"
-    text += "\n✨ Je peux générer toutes les images que tu veux !"
+    text += "\n🎨 JE PEUX CRÉER DES IMAGES ! Utilise /image [ta description] !"
+    text += "\n👨‍💻 Créée avec tout l'amour du monde par Durand 💕"
+    text += "\n✨ Je suis là pour t'aider avec le sourire ma belle !"
+    text += "\n💖 N'hésite jamais à me demander quoi que ce soit !"
     return text
 
 # Dictionnaire des commandes
@@ -402,13 +416,13 @@ def process_command(sender_id, message_text):
     sender_id = str(sender_id)
     
     if not message_text or not isinstance(message_text, str):
-        return "🤖 Message vide ! Tape /start ou /help !"
+        return "🤖 Oh là là ! Message vide ma puce ! Tape /start ou /help pour commencer notre belle conversation ! 💕"
     
     message_text = message_text.strip()
     
     # Si pas une commande, traiter comme chat
     if not message_text.startswith('/'):
-        return cmd_chat(sender_id, message_text) if message_text else "🤖 Salut ! Tape /start ou /help !"
+        return cmd_chat(sender_id, message_text) if message_text else "🤖 Coucou ma belle ! Tape /start ou /help pour découvrir ce que je peux faire ! ✨"
     
     # Parser la commande
     parts = message_text[1:].split(' ', 1)
@@ -420,9 +434,9 @@ def process_command(sender_id, message_text):
             return COMMANDS[command](sender_id, args)
         except Exception as e:
             logger.error(f"❌ Erreur commande {command}: {e}")
-            return f"💥 Erreur dans /{command} ! Réessaie."
+            return f"💥 Oh non ! Petite erreur dans /{command} ma puce ! Réessaie ou tape /help ! 💕"
     
-    return f"❓ Commande /{command} inconnue ! Tape /help"
+    return f"❓ Oh ma belle ! La commande /{command} m'est inconnue ! Tape /help pour voir tout ce que je sais faire ! ✨💕"
 
 def send_message(recipient_id, text):
     """Envoyer un message Facebook"""
@@ -436,7 +450,7 @@ def send_message(recipient_id, text):
     
     # Limiter taille
     if len(text) > 2000:
-        text = text[:1950] + "...\n✨ [Message tronqué]"
+        text = text[:1950] + "...\n✨ [Message tronqué avec amour]"
     
     data = {
         "recipient": {"id": str(recipient_id)},
@@ -513,14 +527,15 @@ def send_image_message(recipient_id, image_url, caption=""):
 def home():
     """Route d'accueil"""
     return jsonify({
-        "status": "🤖 NakamaBot v4.0 Online !",
+        "status": "🤖 NakamaBot v4.0 Féminine Online ! 💖",
         "creator": "Durand",
+        "personality": "Super gentille et féminine",
         "year": "2025",
         "commands": len(COMMANDS),
         "users": len(user_list),
         "conversations": len(user_memory),
-        "version": "4.0",
-        "features": ["Génération d'images IA", "Chat intelligent", "Broadcast admin", "Recherche 2025"],
+        "version": "4.0 Féminine",
+        "features": ["Génération d'images IA", "Chat intelligent et doux", "Broadcast admin", "Recherche 2025", "Personnalité féminine"],
         "last_update": datetime.now().isoformat()
     })
 
@@ -583,7 +598,7 @@ def webhook():
                                     else:
                                         logger.warning(f"❌ Échec envoi image à {sender_id}")
                                         # Fallback texte
-                                        send_message(sender_id, "🎨 Image générée mais erreur d'envoi ! Réessaie /image")
+                                        send_message(sender_id, "🎨 Image créée avec amour mais petite erreur d'envoi ma puce ! Réessaie /image ! 💕")
                                 else:
                                     # Message texte normal
                                     send_result = send_message(sender_id, response)
@@ -606,10 +621,11 @@ def stats():
         "users_count": len(user_list),
         "conversations_count": len(user_memory),
         "commands_available": len(COMMANDS),
-        "version": "4.0",
+        "version": "4.0 Féminine",
         "creator": "Durand",
+        "personality": "Super gentille et féminine",
         "year": 2025,
-        "features": ["AI Image Generation", "Smart Chat", "Admin Broadcast"]
+        "features": ["AI Image Generation", "Sweet Feminine Chat", "Admin Broadcast", "Help Suggestions"]
     })
 
 @app.route("/health", methods=['GET'])
@@ -617,6 +633,7 @@ def health():
     """Santé du bot"""
     health_status = {
         "status": "healthy",
+        "personality": "Super gentille et féminine 💖",
         "services": {
             "ai": bool(MISTRAL_API_KEY),
             "facebook": bool(PAGE_ACCESS_TOKEN)
@@ -625,7 +642,7 @@ def health():
             "users": len(user_list),
             "conversations": len(user_memory)
         },
-        "version": "4.0",
+        "version": "4.0 Féminine",
         "creator": "Durand",
         "timestamp": datetime.now().isoformat()
     }
@@ -649,8 +666,9 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    logger.info("🚀 Démarrage NakamaBot v4.0")
-    logger.info("👨‍💻 Créé par Durand")
+    logger.info("🚀 Démarrage NakamaBot v4.0 Féminine")
+    logger.info("💖 Personnalité super gentille et féminine")
+    logger.info("👨‍💻 Créée par Durand")
     logger.info("📅 Année: 2025")
     
     # Vérifier variables
@@ -668,7 +686,7 @@ if __name__ == "__main__":
     logger.info(f"🎨 {len(COMMANDS)} commandes disponibles")
     logger.info(f"🔐 {len(ADMIN_IDS)} administrateurs")
     logger.info(f"🌐 Serveur sur le port {port}")
-    logger.info("🎉 NakamaBot prêt !")
+    logger.info("🎉 NakamaBot Féminine prête à aider avec amour !")
     
     try:
         app.run(
@@ -678,7 +696,7 @@ if __name__ == "__main__":
             threaded=True
         )
     except KeyboardInterrupt:
-        logger.info("🛑 Arrêt du bot")
+        logger.info("🛑 Arrêt du bot avec tendresse")
     except Exception as e:
         logger.error(f"❌ Erreur critique: {e}")
         raise
